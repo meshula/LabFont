@@ -1,0 +1,6 @@
+[submodule "third/sokol"]
+	path = third/sokol
+	url = https://github.com/floooh/sokol
+[submodule "third/zep"]
+	path = third/zep
+	url = https://github.com/meshula/zep.git
