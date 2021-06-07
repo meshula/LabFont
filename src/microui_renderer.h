@@ -3,12 +3,12 @@
 
 #include "microui.h"
 
-struct FONScontext;
+struct LabFontState;
 
 extern "C" void r_begin(int disp_width, int disp_height);
 extern "C" void r_end(void);
 extern "C" void r_draw(void);
-extern "C" void r_init(FONScontext* font, int font_index, float font_size);
+extern "C" void r_init(LabFontState* font);
 extern "C" void r_draw_rect(mu_Rect rect, mu_Color color);
 extern "C" void r_draw_text(const char *text, mu_Vec2 pos, mu_Color color);
 extern "C" void r_draw_icon(int id, mu_Rect rect, mu_Color color);

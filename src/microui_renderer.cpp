@@ -5,23 +5,21 @@
 #else
 #include "atlas.inl"
 #endif
-#include "fontstash.h"
+#include "../LabFont.h"
 #include <stdlib.h>
 #include <string.h>
 
 /*== micrui renderer =========================================================*/
 static sg_image atlas_img;
 static sgl_pipeline pip;
-static FONScontext* font = nullptr;
-static int font_index = 0;
-static float font_size = 8;
+LabFontState* font = nullptr;
+static LabFontSize font_size;
 
 extern "C"
-void r_init(FONScontext* font_, int font_index_, float font_size_) {
+void r_init(LabFontState* font_) {
 
     font = font_;
-    font_index = font_index_;
-    font_size = font_size_;
+    font_size = LabFontMeasure("", font_);
 #if 1
 #else
     /* atlas image data is in atlas.inl file, this only contains alpha
@@ -154,12 +152,12 @@ inline uint32_t ToPackedABGR(const mu_Color* val)
 extern "C"
 void r_draw_text(const char* text, mu_Vec2 pos, mu_Color color) {
 #if 1
-    fonsSetFont(font, font_index);
-    fonsSetSize(font, font_size);
-    float line_height = 0;
-    fonsVertMetrics(font, NULL, NULL, &line_height);
-    fonsSetColor(font, ToPackedABGR(&color));
-    fonsDrawText(font, (float) pos.x, pos.y + line_height, (const char*)text, (const char*)text + strlen(text));
+    LabFontColor c;
+    c.rgba[0] = color.r;
+    c.rgba[1] = color.g;
+    c.rgba[2] = color.b;
+    c.rgba[3] = color.a;
+    LabFontDrawColor(text, &c, pos.x, pos.y, font);
 #else
     mu_Rect dst = { pos.x, pos.y, 0, 0 };
     for (const char* p = text; *p; p++) {
@@ -175,11 +173,8 @@ void r_draw_text(const char* text, mu_Vec2 pos, mu_Color color) {
 extern "C"
 int r_get_text_width(const char* text, int len) {
 #if 1
-    fonsSetFont(font, font_index);
-    fonsSetSize(font, font_size);
-    float bound[4];
-    fonsTextBounds(font, 0, 0, text, text + strlen(text), bound);
-    return (int) bound[2];
+    LabFontSize sz = LabFontMeasureSubstring(text, text + len, font);
+    return sz.w;
 #else
     int res = 0;
     for (const char* p = text; *p && len--; p++) {
@@ -189,17 +184,60 @@ int r_get_text_width(const char* text, int len) {
 #endif
 }
 
-/*
-  [ MU_ICON_CLOSE ] = { 88, 68, 16, 16 },
-  [ MU_ICON_CHECK ] = { 0, 0, 18, 18 },
-  [ MU_ICON_EXPANDED ] = { 118, 68, 7, 5 },
-  [ MU_ICON_COLLAPSED ] = { 113, 68, 5, 7 },
-
-*/
-
 extern "C"
 void r_draw_icon(int id, mu_Rect rect, mu_Color color) {
 #if 1
+    float w2 = rect.w * 0.5f;
+    float h2 = rect.h * 0.5f;
+    float x = rect.x + w2 * 0.5f;
+    float y = rect.y + h2 * 0.5f;
+    switch (id) {
+    case MU_ICON_CLOSE:
+        sgl_begin_lines();
+        sgl_c4b(color.r, color.g, color.b, color.a);
+        sgl_v2f(x, y);
+        sgl_v2f(x + w2, y + h2);
+        sgl_v2f(x + w2, y);
+        sgl_v2f(x, y + h2);
+        sgl_end();
+        break;
+    case MU_ICON_CHECK:
+        sgl_begin_lines();
+        sgl_c4b(color.r, color.g, color.b, color.a);
+        sgl_v2f(x, y + rect.h * 0.2f);
+        sgl_v2f(x + rect.w * 0.1f, y + rect.h * 0.6f);
+
+        sgl_v2f(x + rect.w * 0.1f, y + rect.h * 0.6f);
+        sgl_v2f(x + rect.w * 0.6f, y - rect.h * 0.1f);
+        sgl_end();
+        break;
+    case MU_ICON_EXPANDED:
+        sgl_begin_lines();
+        sgl_c4b(color.r, color.g, color.b, color.a);
+        sgl_v2f(x + rect.w * 0.4f, y + h2 * 0.1f);
+        sgl_v2f(x + rect.w * 0.4f, y + h2 * 0.9f);
+
+        sgl_v2f(x + rect.w * 0.4f, y + h2 * 0.9f);
+        sgl_v2f(x, y + h2 * 0.9f);
+
+        sgl_v2f(x, y + h2 * 0.9f);
+        sgl_v2f(x + rect.w * 0.4f, y + h2 * 0.1f);
+        sgl_end();
+        break;
+    case MU_ICON_COLLAPSED:
+        sgl_begin_lines();
+        sgl_c4b(color.r, color.g, color.b, color.a);
+        sgl_v2f(x, y);
+        sgl_v2f(x, y + h2);
+
+        sgl_v2f(x, y + h2);
+        sgl_v2f(x + w2 * 0.5f, y + h2 * 0.5f);
+
+        sgl_v2f(x + w2 * 0.5f, y + h2 * 0.5f);
+        sgl_v2f(x, y);
+        sgl_end();
+        break;
+    }
 #else
     mu_Rect src = atlas[id];
     int x = rect.x + (rect.w - src.w) / 2;
@@ -211,7 +249,7 @@ void r_draw_icon(int id, mu_Rect rect, mu_Color color) {
 
 extern "C"
 int r_get_text_height(void) {
-    return (int) font_size;
+    return (int) font_size.h;
 }
 
 extern "C"

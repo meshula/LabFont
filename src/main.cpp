@@ -2,9 +2,11 @@
 #include "lab_sokol.h"
 #include "microui.h"
 #include "microui_renderer.h"
-#include "fontstash.h"
-#include "zep_display.h"
-#include "../MeshulaFont.h"
+#include "LabZep.h"
+#include "../LabFontDemo.h"
+
+#define LABFONT_IMPL
+#include "../LabFont.h"
 
 #include <queue>
 #include <string>
@@ -41,41 +43,10 @@ void main()
 )R";
 
 
-uint32_t sappZepKey(int c)
-{
-    switch (c) 
-    {
-    case SAPP_KEYCODE_TAB: return Zep::ExtKeys::TAB;
-    case SAPP_KEYCODE_ESCAPE: return Zep::ExtKeys::ESCAPE;
-    case SAPP_KEYCODE_ENTER: return Zep::ExtKeys::RETURN;
-    case SAPP_KEYCODE_DELETE: return Zep::ExtKeys::DEL;
-    case SAPP_KEYCODE_HOME: return Zep::ExtKeys::HOME;
-    case SAPP_KEYCODE_END: return Zep::ExtKeys::END;
-    case SAPP_KEYCODE_BACKSPACE: return Zep::ExtKeys::BACKSPACE;
-    case SAPP_KEYCODE_RIGHT: return Zep::ExtKeys::RIGHT;
-    case SAPP_KEYCODE_LEFT: return Zep::ExtKeys::LEFT;
-    case SAPP_KEYCODE_UP: return Zep::ExtKeys::UP;
-    case SAPP_KEYCODE_DOWN: return Zep::ExtKeys::DOWN;
-    case SAPP_KEYCODE_PAGE_DOWN: return Zep::ExtKeys::PAGEDOWN;
-    case SAPP_KEYCODE_PAGE_UP: return Zep::ExtKeys::PAGEUP;
-    case SAPP_KEYCODE_F1: return Zep::ExtKeys::F1;
-    case SAPP_KEYCODE_F2: return Zep::ExtKeys::F2;
-    case SAPP_KEYCODE_F3: return Zep::ExtKeys::F3;
-    case SAPP_KEYCODE_F4: return Zep::ExtKeys::F4;
-    case SAPP_KEYCODE_F5: return Zep::ExtKeys::F5;
-    case SAPP_KEYCODE_F6: return Zep::ExtKeys::F6;
-    case SAPP_KEYCODE_F7: return Zep::ExtKeys::F7;
-    case SAPP_KEYCODE_F8: return Zep::ExtKeys::F8;
-    case SAPP_KEYCODE_F9: return Zep::ExtKeys::F9;
-    case SAPP_KEYCODE_F10: return Zep::ExtKeys::F10;
-    case SAPP_KEYCODE_F11: return Zep::ExtKeys::F11;
-    case SAPP_KEYCODE_F12: return Zep::ExtKeys::F12;
-    default: return c;
-    }
-}
-
-
-
+int zep_x = 0;
+int zep_y = 0;
+int zep_w = 0;
+int zep_h = 0;
 
 typedef struct {
     float r, g, b;
@@ -86,20 +57,13 @@ static struct {
     char logbuf[64000];
     int logbuf_updated;
     color_t bg = { 90.f, 95.f, 100.f };
-
-    FONScontext* fons;
     float dpi_scale;
-    int font_normal;
-    int font_italic;
-    int font_bold;
-    int font_japanese;
-    int font_cousine;
-    uint8_t font_normal_data[256 * 1024];
-    uint8_t font_italic_data[256 * 1024];
-    uint8_t font_bold_data[256 * 1024];
-    uint8_t font_cousine_data[256 * 1024];
-    uint8_t font_japanese_data[2 * 1024 * 1024];
 
+    LabFont* font_japanese = nullptr;
+    LabFont* font_normal = nullptr;
+    LabFont* font_italic = nullptr;
+    LabFont* font_bold = nullptr;
+    LabFont* font_cousine = nullptr;
 } state;
 
 static  char logbuf[64000];
@@ -208,7 +172,7 @@ static void test_window(mu_Context* ctx) {
             mu_layout_end_column(ctx);
             /* color preview */
             mu_Rect r = mu_layout_next(ctx);
-            mu_draw_rect(ctx, r, mu_color(bg[0], bg[1], bg[2], 255));
+            mu_draw_rect(ctx, r, mu_color((int)bg[0], (int)bg[1], (int)bg[2], 255));
             char buf[32];
             sprintf(buf, "#%02X%02X%02X", (int)bg[0], (int)bg[1], (int)bg[2]);
             mu_draw_control_text(ctx, buf, r, MU_COLOR_TEXT, MU_OPT_ALIGNCENTER);
@@ -218,7 +182,7 @@ static void test_window(mu_Context* ctx) {
     }
 }
 
-
+static mu_Id zep_id;
 static void log_window(mu_Context* ctx) {
     if (mu_begin_window(ctx, "Log Window", mu_rect(350, 40, 300, 200))) {
         /* output text panel */
@@ -240,10 +204,13 @@ static void log_window(mu_Context* ctx) {
         int w2[] = { -70, -1 };
         mu_layout_row(ctx, 2, w2, 0);
         if (mu_textbox(ctx, buf, sizeof(buf)) & MU_RES_SUBMIT) {
-            mu_set_focus(ctx, ctx->last_id);
+            mu_set_focus(ctx, ctx->last_id); // keep focus on the text box
             submitted = 1;
         }
-        if (mu_button(ctx, "Submit")) { submitted = 1; }
+        if (mu_button(ctx, "Submit"))
+        {
+            submitted = 1;
+        }
         if (submitted) {
             write_log(buf);
             buf[0] = '\0';
@@ -253,13 +220,45 @@ static void log_window(mu_Context* ctx) {
     }
 }
 
+static void zep_window(mu_Context* ctx) {
+    if (mu_begin_window_ex(ctx, "Zep", mu_rect(100, 100, 800, 600), MU_OPT_NOFRAME)) {
 
-static int uint8_slider(mu_Context *ctx, unsigned char *value, int low, int high) {
+        int w1[] = { -1 };
+
+        static int zep_secret = 0x1337babe;
+        mu_Id zep_id = mu_get_id(ctx, &zep_secret, sizeof(zep_secret));
+
+        mu_layout_row(ctx, 1, w1, -1);
+        mu_Rect rect = mu_layout_next(ctx);
+        mu_update_control(ctx, zep_id, rect, 0);
+
+        mu_layout_set_next(ctx, rect, 0);
+        zep_x = rect.x;
+        zep_y = rect.y;
+        zep_w = rect.w;
+        zep_h = rect.h;
+
+        int w = 5;
+        rect.x -= w;
+        rect.y -= w;
+        rect.w += w+w;
+        rect.h += w+w;
+        mu_draw_box_ex(ctx, rect, { 50, 50, 50, 255 }, w);
+
+        mu_Command* cmd = mu_push_command(ctx, MU_COMMAND_ZEP, sizeof(mu_RectCommand));
+        cmd->rect.rect = rect;
+
+        mu_end_window(ctx);
+    }
+}
+
+
+static int uint8_slider(mu_Context *ctx, uint8_t *value, int low, int high) {
   static float tmp;
   mu_push_id(ctx, &value, sizeof(value));
   tmp = *value;
-  int res = mu_slider_ex(ctx, &tmp, low, high, 0, "%.0f", MU_OPT_ALIGNCENTER);
-  *value = tmp;
+  int res = mu_slider_ex(ctx, &tmp, (mu_Real) low, (mu_Real) high, 0, "%.0f", MU_OPT_ALIGNCENTER);
+  *value = (uint8_t) tmp;
   mu_pop_id(ctx);
   return res;
 }
@@ -285,7 +284,7 @@ static void style_window(mu_Context *ctx) {
   };
 
   if (mu_begin_window(ctx, "Style Editor", mu_rect(350, 250, 300, 240))) {
-    int sw = mu_get_current_container(ctx)->body.w * 0.14;
+    int sw = (int) (mu_get_current_container(ctx)->body.w * 0.14f);
     int w[] = { 80, sw, sw, sw, sw, -1 };
     mu_layout_row(ctx, 6, w, 0);
     for (int i = 0; colors[i].label; i++) {
@@ -300,8 +299,6 @@ static void style_window(mu_Context *ctx) {
   }
 }
 
-
-
 static void line(float sx, float sy, float ex, float ey)
 {
     sgl_begin_lines();
@@ -310,9 +307,6 @@ static void line(float sx, float sy, float ex, float ey)
     sgl_v2f(ex, ey);
     sgl_end();
 }
-
-
-
 
 static int text_width_cb(mu_Font font, const char* text, int len) {
     (void)font;
@@ -337,67 +331,6 @@ static int round_pow2(float v) {
 }
 
 
-/* sokol-fetch load callbacks */
-static void font_normal_loaded(const sfetch_response_t* response) {
-    if (response->fetched) {
-        state.font_normal = fonsAddFontMem(state.fons, "sans", (unsigned char*) response->buffer_ptr, (int)response->fetched_size,  false);
-    }
-    if (response->finished) {
-        // the 'finished'-flag is the catch-all flag for when the request
-        // is finished, no matter if loading was successful or failed,
-        // so any cleanup-work should happen here...
-        if (response->failed) {
-            // 'failed' is true in (addition to 'finished') if something
-            // went wrong (file doesn't exist, or less bytes could be
-            // read from the file than expected)
-            printf("Normal font not found\n");
-        }
-    }
-}
-
-static void font_italic_loaded(const sfetch_response_t* response) {
-    if (response->fetched) {
-        state.font_italic = fonsAddFontMem(state.fons, "sans-italic", (unsigned char*) response->buffer_ptr, (int)response->fetched_size, false);
-    }
-    if (response->finished) {
-        if (response->failed) {
-            printf("Italic font not found\n");
-        }
-    }
-}
-
-static void font_bold_loaded(const sfetch_response_t* response) {
-    if (response->fetched) {
-        state.font_bold = fonsAddFontMem(state.fons, "sans-bold", (unsigned char*) response->buffer_ptr, (int)response->fetched_size, false);
-    }
-    if (response->finished) {
-        if (response->failed) {
-            printf("Bold Italic font not found\n");
-        }
-    }
-}
-
-static void font_japanese_loaded(const sfetch_response_t* response) {
-    if (response->fetched) {
-        state.font_japanese = fonsAddFontMem(state.fons, "sans-japanese", (unsigned char*) response->buffer_ptr, (int)response->fetched_size, false);
-    }
-    if (response->finished) {
-        if (response->failed) {
-            printf("Japanese font not found\n");
-        }
-    }
-}
-
-static void font_cousine_loaded(const sfetch_response_t* response) {
-    if (response->fetched) {
-        state.font_cousine = fonsAddFontMem(state.fons, "sans-cousine", (unsigned char*) response->buffer_ptr, (int)response->fetched_size, false);
-    }
-    if (response->finished) {
-        if (response->failed) {
-            printf("Cousine font not found\n");
-        }
-    }
-}
 
 /* initialization */
 static void init(void) 
@@ -423,59 +356,16 @@ static void init(void)
     pipeline_desc.colors[0].blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
     immediate_pipeline = sgl_make_pipeline(&pipeline_desc);
 
-    /* make sure the fontstash atlas width/height is pow-2 */
-    const int atlas_dim = round_pow2(512.0f * state.dpi_scale);
-    FONScontext* fons_context = sfons_create(atlas_dim, atlas_dim, FONS_ZERO_TOPLEFT);
-    state.fons = fons_context;
-    state.font_normal = FONS_INVALID;
-    state.font_italic = FONS_INVALID;
-    state.font_bold = FONS_INVALID;
-    state.font_japanese = FONS_INVALID;
-    state.font_cousine = FONS_INVALID;
-
-    /* use sokol_fetch for loading the TTF font files */
-    sfetch_desc_t sfetch_desc;
-    memset(&sfetch_desc, 0, sizeof(sfetch_desc));
-    sfetch_desc.num_channels = 1;
-    sfetch_desc.num_lanes = 4;
-    sfetch_setup(&sfetch_desc);
-    sfetch_request_t sfetch_request;
-    memset(&sfetch_request, 0, sizeof(sfetch_request));
-
-    static std::string dsr_path = std::string(meshula_font_asset_base) + "DroidSerif-Regular.ttf";
-    sfetch_request.path = dsr_path.c_str();
-    sfetch_request.callback = font_normal_loaded;
-    sfetch_request.buffer_ptr = state.font_normal_data;
-    sfetch_request.buffer_size = sizeof(state.font_normal_data);
-    sfetch_send(&sfetch_request);
-
-    static std::string dsi_path = std::string(meshula_font_asset_base) + "DroidSerif-Italic.ttf";
-    sfetch_request.path = dsi_path.c_str();
-    sfetch_request.callback = font_italic_loaded;
-    sfetch_request.buffer_ptr = state.font_italic_data;
-    sfetch_request.buffer_size = sizeof(state.font_italic_data);
-    sfetch_send(&sfetch_request);
-
-    static std::string dsb_path = std::string(meshula_font_asset_base) + "DroidSerif-Bold.ttf";
-    sfetch_request.path = dsb_path.c_str();
-    sfetch_request.callback = font_bold_loaded;
-    sfetch_request.buffer_ptr = state.font_bold_data;
-    sfetch_request.buffer_size = sizeof(state.font_bold_data);
-    sfetch_send(&sfetch_request);
-
-    static std::string dsj_path = std::string(meshula_font_asset_base) + "DroidSansJapanese.ttf";
-    sfetch_request.path = dsj_path.c_str();
-    sfetch_request.callback = font_japanese_loaded;
-    sfetch_request.buffer_ptr = state.font_japanese_data;
-    sfetch_request.buffer_size = sizeof(state.font_japanese_data);
-    sfetch_send(&sfetch_request);
-
-    static std::string csr_path = std::string(meshula_font_asset_base) + "Cousine-Regular.ttf";
-    sfetch_request.path = csr_path.c_str();
-    sfetch_request.callback = font_cousine_loaded;
-    sfetch_request.buffer_ptr = state.font_cousine_data;
-    sfetch_request.buffer_size = sizeof(state.font_cousine_data);
-    sfetch_send(&sfetch_request);
+    static std::string dsj_path = std::string(lab_font_demo_asset_base) + "DroidSansJapanese.ttf";
+    state.font_japanese = LabFontLoad("sans-japanese", dsj_path.c_str(), LabFontType{ LabFontTypeTTF });
+    static std::string dsr_path = std::string(lab_font_demo_asset_base) + "DroidSerif-Regular.ttf";
+    state.font_normal = LabFontLoad("serif-normal", dsr_path.c_str(), LabFontType{ LabFontTypeTTF });
+    static std::string dsi_path = std::string(lab_font_demo_asset_base) + "DroidSerif-Italic.ttf";
+    state.font_italic = LabFontLoad("serif-italic", dsi_path.c_str(), LabFontType{ LabFontTypeTTF });
+    static std::string dsb_path = std::string(lab_font_demo_asset_base) + "DroidSerif-Bold.ttf";
+    state.font_bold = LabFontLoad("serif-bold", dsb_path.c_str(), LabFontType{ LabFontTypeTTF });
+    static std::string csr_path = std::string(lab_font_demo_asset_base) + "Cousine-Regular.ttf";
+    state.font_cousine = LabFontLoad("cousine-regular", csr_path.c_str(), LabFontType{ LabFontTypeTTF });
     
     add_quit_menu();
 }
@@ -493,28 +383,30 @@ const int key_map(int c)
     case SAPP_KEYCODE_ENTER: return MU_KEY_RETURN;
     case SAPP_KEYCODE_BACKSPACE: return MU_KEY_BACKSPACE;
     }
-    return c & 511;
+    return 0;// c & 511;
 }
 
-struct ZepInputs {
-    float mouse_delta_x; float mouse_delta_y;
-    float mouse_pos_x; float mouse_pos_y;
-    bool lmb_clicked; bool lmb_released;
-    bool rmb_clicked; bool rmb_released;
-    bool ctrl_down; bool shift_down;
+static LabZep* zep = nullptr;
 
-    std::deque<uint32_t> keys;
-};
-
-static ZepInputs zi;
+static struct {
+    float mouse_pos_x, mouse_pos_y;
+    bool lmb_clicked = false;
+    bool lmb_released = false;
+    bool rmb_clicked = false;
+    bool rmb_released = false;
+} zi;
 
 static void event(const sapp_event* ev) {
+
+    static bool ctrl_l = false;
+    static bool ctrl_r = false;
+    static bool shift_l = false;
+    static bool shift_r = false;
+
     switch (ev->type) {
         case SAPP_EVENTTYPE_MOUSE_DOWN:
             zi.mouse_pos_x = ev->mouse_x;
             zi.mouse_pos_y = ev->mouse_y;
-            zi.mouse_delta_x = ev->mouse_dx;
-            zi.mouse_delta_y = ev->mouse_dy;
             zi.lmb_clicked = true;
             zi.lmb_released = false;
             
@@ -524,8 +416,6 @@ static void event(const sapp_event* ev) {
         case SAPP_EVENTTYPE_MOUSE_UP:
             zi.mouse_pos_x = ev->mouse_x;
             zi.mouse_pos_y = ev->mouse_y;
-            zi.mouse_delta_x = ev->mouse_dx;
-            zi.mouse_delta_y = ev->mouse_dy;
             zi.lmb_clicked = false;
             zi.lmb_released = true;
             
@@ -535,8 +425,6 @@ static void event(const sapp_event* ev) {
         case SAPP_EVENTTYPE_MOUSE_MOVE:
             zi.mouse_pos_x = ev->mouse_x;
             zi.mouse_pos_y = ev->mouse_y;
-            zi.mouse_delta_x = ev->mouse_dx;
-            zi.mouse_delta_y = ev->mouse_dy;
             
             mu_input_mousemove(&state.mu_ctx, (int)ev->mouse_x, (int)ev->mouse_y);
             break;
@@ -547,34 +435,31 @@ static void event(const sapp_event* ev) {
 
         case SAPP_EVENTTYPE_KEY_DOWN:
             switch (ev->key_code & 511) {
-            case SAPP_KEYCODE_LEFT_SHIFT: zi.shift_down = true; break;
-            case SAPP_KEYCODE_RIGHT_SHIFT: zi.shift_down = true; break;
-            case SAPP_KEYCODE_LEFT_CONTROL: zi.ctrl_down = true; break;
-            case SAPP_KEYCODE_RIGHT_CONTROL: zi.ctrl_down = true; break;
+            case SAPP_KEYCODE_LEFT_SHIFT: shift_l = true; break;
+            case SAPP_KEYCODE_RIGHT_SHIFT: shift_r = true; break;
+            case SAPP_KEYCODE_LEFT_CONTROL: ctrl_l = true; break;
+            case SAPP_KEYCODE_RIGHT_CONTROL: ctrl_r = true; break;
                 //case SAPP_KEYCODE_LEFT_ALT: return MU_KEY_ALT;
                 //case SAPP_KEYCODE_RIGHT_ALT: return MU_KEY_ALT;
                 //case SAPP_KEYCODE_ENTER: return MU_KEY_RETURN;
                 //case SAPP_KEYCODE_BACKSPACE: return MU_KEY_BACKSPACE;
             default:
             {
-                uint32_t test_key = sappZepKey(ev->key_code);
-                if (test_key < 32) {
-                    uint32_t key = zi.shift_down ? Zep::ModifierKey::Shift : (zi.ctrl_down ? Zep::ModifierKey::Ctrl : 0);
-                    zi.keys.push_back(key | test_key);
+                if (state.mu_ctx.focus == zep_id && ev->key_code >= SAPP_KEYCODE_ESCAPE) {
+                    LabZep_input_sokol_key(zep, ev->key_code, shift_l || shift_r, ctrl_l || ctrl_r);
                 }
                 break;
             }
             }
-
             mu_input_keydown(&state.mu_ctx, key_map(ev->key_code));
             break;
 
             case SAPP_EVENTTYPE_KEY_UP:
             switch (ev->key_code & 511) {
-            case SAPP_KEYCODE_LEFT_SHIFT: zi.shift_down = false; break;
-            case SAPP_KEYCODE_RIGHT_SHIFT: zi.shift_down = false; break;
-            case SAPP_KEYCODE_LEFT_CONTROL: zi.ctrl_down = false; break;
-            case SAPP_KEYCODE_RIGHT_CONTROL: zi.ctrl_down = false; break;
+            case SAPP_KEYCODE_LEFT_SHIFT: shift_l = false; break;
+            case SAPP_KEYCODE_RIGHT_SHIFT: shift_r = false; break;
+            case SAPP_KEYCODE_LEFT_CONTROL: ctrl_l = false; break;
+            case SAPP_KEYCODE_RIGHT_CONTROL: ctrl_r = false; break;
                 //case SAPP_KEYCODE_LEFT_ALT: return MU_KEY_ALT;
                 //case SAPP_KEYCODE_RIGHT_ALT: return MU_KEY_ALT;
                 //case SAPP_KEYCODE_ENTER: return MU_KEY_RETURN;
@@ -585,9 +470,10 @@ static void event(const sapp_event* ev) {
             break;
 
         case SAPP_EVENTTYPE_CHAR:
-            {
-                zi.keys.push_back(ev->char_code);
-
+            if (state.mu_ctx.focus == zep_id) {
+                LabZep_input_sokol_key(zep, ev->char_code, shift_l || shift_r, ctrl_l || ctrl_r);
+            }
+            else {
                 char txt[2] = { (char)(ev->char_code & 255), 0 };
                 mu_input_text(&state.mu_ctx, txt);
             }
@@ -598,31 +484,106 @@ static void event(const sapp_event* ev) {
     }
 }
 
+void fontDemo(float& dx, float& dy, float sx, float sy) {
+
+    if (state.font_japanese == nullptr)
+        return;
+
+    float dpis = state.dpi_scale;
+    float sz;
+
+    //-------------------------------------
+    sz = 80.f * dpis;
+    static LabFontState* a_st = LabFontStateBake(state.font_normal, sz, { {255, 255, 255, 255} }, LabFontAlign{ 0 }, 0, 0);
+    static LabFontState* b_st = LabFontStateBake(state.font_italic, sz, { {128, 128, 0, 255} },   LabFontAlign{ 0 }, 0, 0);
+    static LabFontState* c_st = LabFontStateBake(state.font_italic, sz, { {255, 255, 255, 255} }, LabFontAlign{ 0 }, 0, 0);
+    static LabFontState* d_st = LabFontStateBake(state.font_bold,   sz, { {255, 255, 255, 255} }, LabFontAlign{ 0 }, 0, 0);
+    dx = sx;
+    dy += 30.f * dpis;
+    dx = LabFontDraw("The quick ", dx, dy, a_st);
+    dx = LabFontDraw("brown ", dx, dy, b_st);
+    dx = LabFontDraw("fox ", dx, dy, a_st);
+    dx = LabFontDraw("jumps over ", dx, dy, c_st);
+    dx = LabFontDraw("the lazy ", dx, dy, c_st);
+    dx = LabFontDraw("dog ", dx, dy, a_st);
+    //-------------------------------------
+    dx = sx;
+    dy += sz * 1.2f;
+    sz = 24.f * dpis;
+    static LabFontState* e_st = LabFontStateBake(state.font_normal, sz, { {0, 125, 255, 255} }, LabFontAlign{ 0 }, 0, 0);
+    LabFontDraw("Now is the time for all good men to come to the aid of the party.", dx, dy, e_st);
+    //-------------------------------------
+    dx = sx;
+    dy += sz * 1.2f * 2;
+    sz = 18.f * dpis;
+    static LabFontState* f_st = LabFontStateBake(state.font_italic, sz, { {255, 255, 0, 255} }, LabFontAlign{ 0 }, 0, 0);
+    LabFontDraw("Ég get etið gler án þess að meiða mig.", dx, dy, f_st);
+    //-------------------------------------
+    static LabFontState* j_st = LabFontStateBake(state.font_japanese, 24, { {128, 0, 0, 255} }, LabFontAlign{ 0 }, 0, 0);
+    dx = sx;
+    dy += 20.f * dpis;
+    LabFontDraw("いろはにほへと ちりぬるを わかよたれそ つねならむ うゐのおくやま けふこえて あさきゆめみし ゑひもせす　京（ん）", dx, dy, j_st);
+    //-------------------------------------
+    sz = 18.f * dpis;
+    static LabFontState* p_st = LabFontStateBake(state.font_normal, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignTop }, 0, 0);
+    dx = 50 * dpis; dy = 350 * dpis;
+    line(dx - 10 * dpis, dy, dx + 250 * dpis, dy);
+    dx = LabFontDraw("Top", dx, dy, p_st);
+    static LabFontState* g_st = LabFontStateBake(state.font_normal, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignMiddle }, 0, 0);
+    dx += 10 * dpis;
+    dx = LabFontDraw("Middle", dx, dy, g_st);
+    dx += 10 * dpis;
+    static LabFontState* q_st = LabFontStateBake(state.font_normal, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignBaseline }, 0, 0);
+    dx = LabFontDraw("Baseline", dx, dy, q_st);
+    dx += 10 * dpis;
+    static LabFontState* h_st = LabFontStateBake(state.font_normal, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignBottom }, 0, 0);
+    LabFontDraw("Bottom", dx, dy, h_st);
+    dx = 150 * dpis; dy = 400 * dpis;
+    line(dx, dy - 30 * dpis, dx, dy + 80.0f * dpis);
+    static LabFontState* i_st = LabFontStateBake(state.font_normal, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignBaseline }, 0, 0);
+    static LabFontState* k_st = LabFontStateBake(state.font_normal, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignCenter | LabFontAlignBaseline }, 0, 0);
+    static LabFontState* l_st = LabFontStateBake(state.font_normal, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignRight | LabFontAlignBaseline }, 0, 0);
+    LabFontDraw("Left", dx, dy, i_st);
+    dy += 30 * dpis;
+    LabFontDraw("Center", dx, dy, k_st);
+    dy += 30 * dpis;
+    LabFontDraw("Right", dx, dy, l_st);
+    //-------------------------------------
+    dx = 500 * dpis; dy = 350 * dpis;
+    sz = 60.f * dpis;
+    static LabFontState* m_st = LabFontStateBake(state.font_italic, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignBaseline }, 5.f * dpis, 10.f);
+    LabFontDraw("Blurry...", dx, dy, m_st);
+    //-------------------------------------
+    dy += sz;
+    sz = 18.f * dpis;
+    static LabFontState* n_st = LabFontStateBake(state.font_bold, sz, { {0,0,0, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignBaseline }, 0.f, 3.f);
+    static LabFontState* o_st = LabFontStateBake(state.font_bold, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignBaseline }, 0.f, 0.f);
+    LabFontDraw("DROP THAT SHADOW", dx+5*dpis, dy+5*dpis, n_st);
+    LabFontDraw("DROP THAT SHADOW", dx, dy, o_st);
+}
+
 /* do one frame */
 void frame(void) {
 
-    /* pump sokol_fetch message queues */
-    sfetch_dowork();
-
     static bool init_zep = true;
-    static std::shared_ptr<Zep::ZepContainer_MeshulaFont> zep;
     if (init_zep && state.font_cousine >= 0)
     {
-        std::string startupFilePath;
-        std::string configPath;
         int fontPixelHeight = 20;
-        zep = std::make_shared<Zep::ZepContainer_MeshulaFont>(startupFilePath, configPath, state.fons, state.font_cousine, fontPixelHeight);
-        zep->GetEditor().SetGlobalMode(Zep::ZepMode_Vim::StaticName());
-        zep->GetEditor().GetTheme().SetThemeType(Zep::ThemeType::Dark);
+        static LabFontState* microui_st = LabFontStateBake(state.font_cousine, 
+            (float) fontPixelHeight, { {255, 255, 255, 255} }, 
+            LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
 
         /* setup microui renderer */
-        r_init(state.fons, state.font_cousine, fontPixelHeight);
+        r_init(microui_st);
 
         /* setup microui */
         mu_init(&state.mu_ctx);
         state.mu_ctx.text_width = text_width_cb;
         state.mu_ctx.text_height = text_height_cb;
 
+        fontPixelHeight = 18;
+        static LabFontState* zep_st = LabFontStateBake(state.font_cousine, (float) fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
+        zep = LabZep_create(zep_st, "Shader.frag", shader.c_str());
         init_zep = false;
     }
 
@@ -635,180 +596,27 @@ void frame(void) {
     sx = 50*dpis; sy = 50*dpis;
     dx = sx; dy = sy;
 
-    uint32_t white = sfons_rgba(255, 255, 255, 255);
-    uint32_t black = sfons_rgba(0, 0, 0, 255);
-    uint32_t brown = sfons_rgba(192, 128, 0, 128);
-    uint32_t blue  = sfons_rgba(0, 192, 255, 255);
-    fonsClearState(state.fons);
-
     sgl_defaults();
     sgl_matrix_mode_projection();
-    sgl_ortho(0.0f, sapp_width(), sapp_height(), 0.0f, -1.0f, +1.0f);
+    sgl_ortho(0.0f, (float) sapp_width(), (float) sapp_height(), 0.0f, -1.0f, +1.0f);
     sgl_scissor_rect(0, 0, sapp_width(), sapp_height(), true);
 
-    FONScontext* fs = state.fons;
-    if (state.font_normal != FONS_INVALID) {
-        fonsSetFont(fs, state.font_normal);
-        fonsSetSize(fs, 124.0f*dpis);
-        fonsVertMetrics(fs, NULL, NULL, &lh);
-        dx = sx;
-        dy += lh;
-        fonsSetColor(fs, white);
-        dx = fonsDrawText(fs, dx, dy, "The quick ", NULL);
-    }
-    if (state.font_italic != FONS_INVALID) {
-        fonsSetFont(fs, state.font_italic);
-        fonsSetSize(fs, 48.0f*dpis);
-        fonsSetColor(fs, brown);
-        dx = fonsDrawText(fs, dx, dy, "brown ", NULL);
-    }
-    if (state.font_normal != FONS_INVALID) {
-        fonsSetFont(fs, state.font_normal);
-        fonsSetSize(fs, 24.0f*dpis);
-        fonsSetColor(fs, white);
-        dx = fonsDrawText(fs, dx, dy,"fox ", NULL);
-    }
-    if ((state.font_normal != FONS_INVALID) && (state.font_italic != FONS_INVALID) && (state.font_bold != FONS_INVALID)) {
-        fonsVertMetrics(fs, NULL, NULL, &lh);
-        dx = sx;
-        dy += lh*1.2f;
-        fonsSetFont(fs, state.font_italic);
-        dx = fonsDrawText(fs, dx, dy, "jumps over ",NULL);
-        fonsSetFont(fs, state.font_bold);
-        dx = fonsDrawText(fs, dx, dy, "the lazy ",NULL);
-        fonsSetFont(fs, state.font_normal);
-        dx = fonsDrawText(fs, dx, dy, "dog.",NULL);
-    }
-    if (state.font_normal != FONS_INVALID) {
-        dx = sx;
-        dy += lh*1.2f;
-        fonsSetSize(fs, 12.0f*dpis);
-        fonsSetFont(fs, state.font_normal);
-        fonsSetColor(fs, blue);
-        fonsDrawText(fs, dx,dy,"Now is the time for all good men to come to the aid of the party.",NULL);
-    }
-    if (state.font_italic != FONS_INVALID) {
-        fonsVertMetrics(fs, NULL, NULL, &lh);
-        dx = sx;
-        dy += lh*1.2f*2;
-        fonsSetSize(fs, 18.0f*dpis);
-        fonsSetFont(fs, state.font_italic);
-        fonsSetColor(fs, white);
-        fonsDrawText(fs, dx, dy, "Ég get etið gler án þess að meiða mig.", NULL);
-    }
-    if (state.font_japanese != FONS_INVALID) {
-        fonsVertMetrics(fs, NULL,NULL,&lh);
-        dx = sx;
-        dy += lh*1.2f;
-        fonsSetFont(fs, state.font_japanese);
-        fonsDrawText(fs, dx,dy,"いろはにほへと ちりぬるを わかよたれそ つねならむ うゐのおくやま けふこえて あさきゆめみし ゑひもせす　京（ん）",NULL);
-    }
-
-    /* Font alignment */
-    if (state.font_normal != FONS_INVALID) {
-        fonsSetSize(fs, 18.0f*dpis);
-        fonsSetFont(fs, state.font_normal);
-        fonsSetColor(fs, white);
-        dx = 50*dpis; dy = 350*dpis;
-        line(dx-10*dpis,dy,dx+250*dpis,dy);
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_TOP);
-        dx = fonsDrawText(fs, dx,dy,"Top",NULL);
-        dx += 10*dpis;
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_MIDDLE);
-        dx = fonsDrawText(fs, dx,dy,"Middle",NULL);
-        dx += 10*dpis;
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
-        dx = fonsDrawText(fs, dx,dy,"Baseline",NULL);
-        dx += 10*dpis;
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BOTTOM);
-        fonsDrawText(fs, dx,dy,"Bottom",NULL);
-        dx = 150*dpis; dy = 400*dpis;
-        line(dx,dy-30*dpis,dx,dy+80.0f*dpis);
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
-        fonsDrawText(fs, dx,dy,"Left",NULL);
-        dy += 30*dpis;
-        fonsSetAlign(fs, FONS_ALIGN_CENTER | FONS_ALIGN_BASELINE);
-        fonsDrawText(fs, dx,dy,"Center",NULL);
-        dy += 30*dpis;
-        fonsSetAlign(fs, FONS_ALIGN_RIGHT | FONS_ALIGN_BASELINE);
-        fonsDrawText(fs, dx,dy,"Right",NULL);
-    }
-
-    /* Blur */
-    if (state.font_italic != FONS_INVALID) {
-        dx = 500*dpis; dy = 350*dpis;
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
-        fonsSetSize(fs, 60.0f*dpis);
-        fonsSetFont(fs, state.font_italic);
-        fonsSetColor(fs, white);
-        fonsSetSpacing(fs, 5.0f*dpis);
-        fonsSetBlur(fs, 10.0f);
-        fonsDrawText(fs, dx,dy,"Blurry...",NULL);
-    }
-
-    if (state.font_bold != FONS_INVALID) {
-        dy += 50.0f*dpis;
-        fonsSetSize(fs, 18.0f*dpis);
-        fonsSetFont(fs, state.font_bold);
-        fonsSetColor(fs, black);
-        fonsSetSpacing(fs, 0.0f);
-        fonsSetBlur(fs, 3.0f);
-        fonsDrawText(fs, dx,dy+2,"DROP THAT SHADOW",NULL);
-        fonsSetColor(fs, white);
-        fonsSetBlur(fs, 0);
-        fonsDrawText(fs, dx,dy,"DROP THAT SHADOW",NULL);
-    }
-    
-    
-    //---- zep
-    
-#if 0
-    // if there was nothing else going on, this could be used to skip
-    // rendering - it would only be true when the cursor blink needs updating
-    if (!zep.spEditor->RefreshRequired())
-    {
-        continue;
-    }
-#endif
-
-    if (zep)
-    {
-        sgl_push_scissor_rect();
-        zep->spEditor->SetDisplayRegion(Zep::NVec2f(100,100), Zep::NVec2f(500,500));
-
-        // Display the editor inside this window
-        zep->spEditor->Display();
-        const Zep::ZepBuffer& buffer = zep->spEditor->GetActiveTabWindow()->GetActiveWindow()->GetBuffer();
-
-        zep->spEditor->HandleMouseInput(buffer, zi.mouse_delta_x, zi.mouse_delta_y,
-            zi.mouse_pos_x, zi.mouse_pos_y, zi.lmb_clicked, zi.lmb_released,
-            zi.rmb_clicked, zi.rmb_released);
-
-        while (!zi.keys.empty()) {
-            uint32_t key = zi.keys.front();
-            zi.keys.pop_front();
-
-            printf("Key: %d %c\n", key, key & 0xff);
-
-            zep->spEditor->HandleKeyInput(buffer, 
-                key & 0xff, 
-                key & (Zep::ModifierKey::Ctrl << 8),
-                key & (Zep::ModifierKey::Shift << 8));
-        }
-
-        sgl_pop_scissor_rect();
-    }
-
+    fontDemo(dx, dy, sx, sy);
 
     //---- UI layer
     if (true) {
         /* UI definition */
         mu_begin(&state.mu_ctx);
-        //test_window(&state.mu_ctx);
+        test_window(&state.mu_ctx);
         log_window(&state.mu_ctx);
-        //style_window(&state.mu_ctx);
+        zep_window(&state.mu_ctx);
+        style_window(&state.mu_ctx);
         mu_end(&state.mu_ctx);
-    
+
+        LabZep_process_events(zep, zep_x, zep_y, zep_w, zep_h,
+            zi.mouse_pos_x, zi.mouse_pos_y, zi.lmb_clicked, zi.lmb_released,
+            zi.rmb_clicked, zi.rmb_released);
+
         /* micro-ui rendering */
         r_begin(sapp_width(), sapp_height());
         //r_clear(mu_color(bg[0], bg[1], bg[2], 255));
@@ -819,50 +627,26 @@ void frame(void) {
                 case MU_COMMAND_RECT: r_draw_rect(cmd->rect.rect, cmd->rect.color); break;
                 case MU_COMMAND_ICON: r_draw_icon(cmd->icon.id, cmd->icon.rect, cmd->icon.color); break;
                 case MU_COMMAND_CLIP: r_set_clip_rect(cmd->clip.rect); break;
+                case MU_COMMAND_ZEP: LabZep_render(zep); break;
             }
         }
         r_end();
     }
 
-    /* flush fontstash's font atlas to sokol-gfx texture */
-    sfons_flush(fs);
+    LabFontCommitTexture();
 
+    // begin rendering with a clear pass
     sg_pass_action pass_action;
     memset(&pass_action, 0, sizeof(pass_action));
     pass_action.colors[0].action = SG_ACTION_CLEAR;
     pass_action.colors[0].value = { state.bg.r / 255.0f, state.bg.g / 255.0f, state.bg.b / 255.0f, 1.0f };
-
-
-    /* render the sokol-gfx default pass */
-    sg_begin_default_pass(&pass_action,
-        sapp_width(), sapp_height());
+    sg_begin_default_pass(&pass_action, sapp_width(), sapp_height());
 
     // draw all the sgl stuff
     sgl_draw();
 
     sg_end_pass();
     sg_commit();
-
-#if 0
-    this is how to open a file
-    if (ImGui::MenuItem("Open"))
-    {
-        auto openFileName = tinyfd_openFileDialog(
-            "Choose a file",
-            "",
-            0,
-            nullptr,
-            nullptr,
-            0);
-        if (openFileName != nullptr)
-        {
-            auto pBuffer = zep.GetEditor().GetFileBuffer(openFileName);
-            zep.GetEditor().GetActiveTabWindow()->GetActiveWindow()->SetBuffer(pBuffer);
-        }
-    }
-    ImGui::EndMenu();
-
-#endif
 }
 
 static void cleanup(void) {
@@ -888,7 +672,7 @@ sapp_desc sokol_main(int argc, char* argv[])
     desc.width = 1200;
     desc.height = 1000;
     desc.gl_force_gles2 = true;
-    desc.window_title = "LabSound GraphToy";
+    desc.window_title = "LabFont";
     desc.ios_keyboard_resizes_canvas = false;
 
     return desc;

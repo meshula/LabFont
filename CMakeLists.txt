@@ -21,22 +21,27 @@ endif()
 
 include(sokol.cmake)
 
-configure_file("${meshula_font_ROOT}/MeshulaFont.config.h" 
-               "${meshula_font_ROOT}/MeshulaFont.h" @ONLY)
+configure_file("${meshula_font_ROOT}/LabFontDemo.config.h"
+               "${meshula_font_ROOT}/LabFontDemo.h" @ONLY)
 
 set(SRC
     src/fontstash.h
     src/lab_sokol.h
+    src/LabZep.cpp
+    src/LabZep.h
     src/main.cpp
     src/microui.c
     src/microui.h
-    src/microui_renderer.c
+    src/microui_renderer.cpp
     src/microui_renderer.h
+    src/quadplay_font.cpp
+    src/stb_image.h
     src/stb_truetype.h
-    src/zep_display.h
+    src/lab_floooh_8bitfont.cpp
+    src/lab_floooh_8bitfont.h
     third/zep/extensions/repl/mode_repl.cpp
     third/zep/extensions/repl/mode_repl.h
-    MeshulaFont.h
+    LabFontDemo.h
     #src/VideoReader.c
     #src/VideoReader.h
 )
@@ -110,4 +115,4 @@ install(FILES
     "${meshula_font_ROOT}/resources/DroidSerif-Italic.ttf"
     "${meshula_font_ROOT}/resources/DroidSerif-Regular.ttf"
     "${meshula_font_ROOT}/third/zep/demos/demo_imgui/res/Cousine-Regular.ttf"
-    DESTINATION share/meshula_font)
+    DESTINATION share/lab_font_demo)

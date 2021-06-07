@@ -481,6 +481,12 @@ void mu_draw_box(mu_Context *ctx, mu_Rect rect, mu_Color color) {
   mu_draw_rect(ctx, mu_rect(rect.x + rect.w - 1, rect.y, 1, rect.h), color);
 }
 
+void mu_draw_box_ex(mu_Context* ctx, mu_Rect rect, mu_Color color, int frame_width) {
+  mu_draw_rect(ctx, mu_rect(rect.x + frame_width, rect.y, rect.w - 2, frame_width), color);
+  mu_draw_rect(ctx, mu_rect(rect.x + frame_width, rect.y + rect.h - frame_width, rect.w - 2, frame_width), color);
+  mu_draw_rect(ctx, mu_rect(rect.x, rect.y, frame_width, rect.h), color);
+  mu_draw_rect(ctx, mu_rect(rect.x + rect.w - frame_width, rect.y, frame_width, rect.h), color);
+}
 
 void mu_draw_text(mu_Context *ctx, mu_Font font, const char *str, int len,
   mu_Vec2 pos, mu_Color color)
