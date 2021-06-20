@@ -1,6 +1,8 @@
 
 # LabFont
 
+![LabFont][LabFont.jpg]
+
 This project is an exploration of getting text into a rendeing pipeline
 based on @floooh's sokol. Frameworks such as Dear ImGui solve text
 rendering well, but are bound into their overall framework scheme; it's
