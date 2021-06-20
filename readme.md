@@ -45,7 +45,7 @@ This project combines several libraries, thanks to their respective authors!
 
 - https://github.com/memononen/fontstash
 - https://github.com/nothings/stb
-- https://github.com/floooh/sokoli
+- https://github.com/floooh/sokol
 - https://github.com/rxi/microui
 - https://github.com/rezonality/zep
 - https://github.com/Tencent/rapidjson
