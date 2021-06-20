@@ -27,13 +27,16 @@ configure_file("${meshula_font_ROOT}/LabFontDemo.config.h"
 set(SRC
     src/fontstash.h
     src/lab_sokol.h
-    src/LabZep.cpp
-    src/LabZep.h
+    src/LabFont.cpp
+    src/LabFontDemo.cpp
+    src/lab_zep.cpp
+    src/lab_microui.h
+    src/lab_microui.cpp
     src/main.cpp
     src/microui.c
     src/microui.h
-    src/microui_renderer.cpp
-    src/microui_renderer.h
+    src/microui_demo.cpp
+    src/microui_demo.h
     src/quadplay_font.cpp
     src/stb_image.h
     src/stb_truetype.h
@@ -41,13 +44,15 @@ set(SRC
     src/lab_floooh_8bitfont.h
     third/zep/extensions/repl/mode_repl.cpp
     third/zep/extensions/repl/mode_repl.h
+    LabFont.h
     LabFontDemo.h
+    LabZep.h
     #src/VideoReader.c
     #src/VideoReader.h
 )
 
 if (APPLE)
-    set(PLATFORM_SRC src/mac.m)
+    set(PLATFORM_SRC src/mac_menus.m)
 endif()
 
 set(BUILD_IMGUI OFF)
@@ -55,7 +60,7 @@ set(BUILD_DEMOS OFF)
 set(BUILD_TESTS OFF)
 add_subdirectory(third/zep)
 
-add_executable(meshula-font MACOSX_BUNDLE WIN32 ${SRC} ${PLATFORM_SRC})
+add_executable(meshula-font MACOSX_BUNDLE ${SRC} ${PLATFORM_SRC})
 
 if (APPLE)
   #  list(APPEND LIBS
@@ -83,7 +88,6 @@ elseif(WIN32)
         ${ST_GFX_DEFS}
         ${PLATFORM_DEFS}
         _CRT_SECURE_NO_WARNINGS
-        # SOKOL_WIN32_FORCE_MAIN # enable for a console application on Windows
     )
 else()
     list(APPEND LIBS
@@ -93,6 +97,7 @@ endif()
 
 target_include_directories(meshula-font PRIVATE
     third
+    third/rapidjson/include
     third/zep/include)
 
 if (WIN32)
@@ -114,5 +119,9 @@ install(FILES
     "${meshula_font_ROOT}/resources/DroidSerif-Bold.ttf"
     "${meshula_font_ROOT}/resources/DroidSerif-Italic.ttf"
     "${meshula_font_ROOT}/resources/DroidSerif-Regular.ttf"
+    "${meshula_font_ROOT}/resources/robot-18.png"
+    "${meshula_font_ROOT}/resources/robot-18.font.json"
+    "${meshula_font_ROOT}/resources/hauer-12.png"
+    "${meshula_font_ROOT}/resources/hauer-12.font.json"
     "${meshula_font_ROOT}/third/zep/demos/demo_imgui/res/Cousine-Regular.ttf"
     DESTINATION share/lab_font_demo)

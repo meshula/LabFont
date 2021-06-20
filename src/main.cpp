@@ -1,9 +1,9 @@
 
-#include "lab_sokol.h"
-#include "microui.h"
-#include "microui_renderer.h"
-#include "LabZep.h"
+#include "../LabSokol.h"
+#include "../LabMicroUI.h"
+#include "../LabZep.h"
 #include "../LabFontDemo.h"
+#include "microui_demo.h"
 
 #define LABFONT_IMPL
 #include "../LabFont.h"
@@ -16,6 +16,9 @@ void add_quit_menu() {}
 #else
 extern "C" void add_quit_menu();
 #endif
+
+void fontDemo(float& dx, float& dy, float sx, float sy);
+
 
 std::string g_app_path;
 static sgl_pipeline immediate_pipeline;
@@ -43,184 +46,33 @@ void main()
 )R";
 
 
-int zep_x = 0;
-int zep_y = 0;
-int zep_w = 0;
-int zep_h = 0;
 
 typedef struct {
     float r, g, b;
 } color_t;
 
 static struct {
-    mu_Context mu_ctx;
+    mu_Context* mu_ctx = nullptr;
     char logbuf[64000];
     int logbuf_updated;
     color_t bg = { 90.f, 95.f, 100.f };
     float dpi_scale;
+
+    mu_Id zep_id;
 
     LabFont* font_japanese = nullptr;
     LabFont* font_normal = nullptr;
     LabFont* font_italic = nullptr;
     LabFont* font_bold = nullptr;
     LabFont* font_cousine = nullptr;
+    LabFont* font_robot18 = nullptr;
 } state;
 
-static  char logbuf[64000];
-static   int logbuf_updated = 0;
-static float bg[3] = { 90, 95, 100 };
+static LabZep* zep = nullptr;
 
 
-static void write_log(const char *text) {
-  if (logbuf[0]) { strcat(logbuf, "\n"); }
-  strcat(logbuf, text);
-  logbuf_updated = 1;
-}
-
-static void test_window(mu_Context* ctx) {
-    /* do window */
-    if (mu_begin_window(ctx, "Demo Window", mu_rect(40, 40, 300, 450))) {
-        mu_Container* win = mu_get_current_container(ctx);
-        win->rect.w = mu_max(win->rect.w, 240);
-        win->rect.h = mu_max(win->rect.h, 300);
-
-        /* window info */
-        if (mu_header(ctx, "Window Info")) {
-            mu_Container* win = mu_get_current_container(ctx);
-            char buf[64];
-            int widths[] = { 54, -1 };
-            mu_layout_row(ctx, 2, widths, 0);
-            mu_label(ctx, "Position:");
-            sprintf(buf, "%d, %d", win->rect.x, win->rect.y); mu_label(ctx, buf);
-            mu_label(ctx, "Size:");
-            sprintf(buf, "%d, %d", win->rect.w, win->rect.h); mu_label(ctx, buf);
-        }
-
-        /* labels + buttons */
-        if (mu_header_ex(ctx, "Test Buttons", MU_OPT_EXPANDED)) {
-            int widths[] = { 86, -110, -1 };
-            mu_layout_row(ctx, 3, widths, 0);
-            mu_label(ctx, "Test buttons 1:");
-            if (mu_button(ctx, "Button 1")) { write_log("Pressed button 1"); }
-            if (mu_button(ctx, "Button 2")) { write_log("Pressed button 2"); }
-            mu_label(ctx, "Test buttons 2:");
-            if (mu_button(ctx, "Button 3")) { write_log("Pressed button 3"); }
-            if (mu_button(ctx, "Popup")) { mu_open_popup(ctx, "Test Popup"); }
-            if (mu_begin_popup(ctx, "Test Popup")) {
-                mu_button(ctx, "Hello");
-                mu_button(ctx, "World");
-                mu_end_popup(ctx);
-            }
-        }
-
-        /* tree */
-        if (mu_header_ex(ctx, "Tree and Text", MU_OPT_EXPANDED)) {
-            int widths[] = { 140, -1 };
-            mu_layout_row(ctx, 2, widths, 0);
-            mu_layout_begin_column(ctx);
-            if (mu_begin_treenode(ctx, "Test 1")) {
-                if (mu_begin_treenode(ctx, "Test 1a")) {
-                    mu_label(ctx, "Hello");
-                    mu_label(ctx, "world");
-                    mu_end_treenode(ctx);
-                }
-                if (mu_begin_treenode(ctx, "Test 1b")) {
-                    if (mu_button(ctx, "Button 1")) { write_log("Pressed button 1"); }
-                    if (mu_button(ctx, "Button 2")) { write_log("Pressed button 2"); }
-                    mu_end_treenode(ctx);
-                }
-                mu_end_treenode(ctx);
-            }
-            if (mu_begin_treenode(ctx, "Test 2")) {
-                int w2[] = { 54, 54 };
-                mu_layout_row(ctx, 2, w2, 0);
-                if (mu_button(ctx, "Button 3")) { write_log("Pressed button 3"); }
-                if (mu_button(ctx, "Button 4")) { write_log("Pressed button 4"); }
-                if (mu_button(ctx, "Button 5")) { write_log("Pressed button 5"); }
-                if (mu_button(ctx, "Button 6")) { write_log("Pressed button 6"); }
-                mu_end_treenode(ctx);
-            }
-            if (mu_begin_treenode(ctx, "Test 3")) {
-                static int checks[3] = { 1, 0, 1 };
-                mu_checkbox(ctx, "Checkbox 1", &checks[0]);
-                mu_checkbox(ctx, "Checkbox 2", &checks[1]);
-                mu_checkbox(ctx, "Checkbox 3", &checks[2]);
-                mu_end_treenode(ctx);
-            }
-            mu_layout_end_column(ctx);
-
-            mu_layout_begin_column(ctx);
-            int w2[] = { -1 };
-            mu_layout_row(ctx, 1, widths, 0);
-            mu_text(ctx, "Lorem ipsum dolor sit amet, consectetur adipiscing "
-                "elit. Maecenas lacinia, sem eu lacinia molestie, mi risus faucibus "
-                "ipsum, eu varius magna felis a nulla.");
-            mu_layout_end_column(ctx);
-        }
-
-        /* background color sliders */
-        if (mu_header_ex(ctx, "Background Color", MU_OPT_EXPANDED)) {
-            int w1[] = { -78, -1 };
-            mu_layout_row(ctx, 2, w1, 74);
-            /* sliders */
-            mu_layout_begin_column(ctx);
-            int w2[] = { 46, -1 };
-            mu_layout_row(ctx, 2, w2, 0);
-            mu_label(ctx, "Red:");   mu_slider(ctx, &bg[0], 0, 255);
-            mu_label(ctx, "Green:"); mu_slider(ctx, &bg[1], 0, 255);
-            mu_label(ctx, "Blue:");  mu_slider(ctx, &bg[2], 0, 255);
-            mu_layout_end_column(ctx);
-            /* color preview */
-            mu_Rect r = mu_layout_next(ctx);
-            mu_draw_rect(ctx, r, mu_color((int)bg[0], (int)bg[1], (int)bg[2], 255));
-            char buf[32];
-            sprintf(buf, "#%02X%02X%02X", (int)bg[0], (int)bg[1], (int)bg[2]);
-            mu_draw_control_text(ctx, buf, r, MU_COLOR_TEXT, MU_OPT_ALIGNCENTER);
-        }
-
-        mu_end_window(ctx);
-    }
-}
-
-static mu_Id zep_id;
-static void log_window(mu_Context* ctx) {
-    if (mu_begin_window(ctx, "Log Window", mu_rect(350, 40, 300, 200))) {
-        /* output text panel */
-        int w1[] = { -1 };
-        mu_layout_row(ctx, 1, w1, -25);
-        mu_begin_panel(ctx, "Log Output");
-        mu_Container* panel = mu_get_current_container(ctx);
-        mu_layout_row(ctx, 1, w1, -1);
-        mu_text(ctx, logbuf);
-        mu_end_panel(ctx);
-        if (logbuf_updated) {
-            panel->scroll.y = panel->content_size.y;
-            logbuf_updated = 0;
-        }
-
-        /* input textbox + submit button */
-        static char buf[128];
-        int submitted = 0;
-        int w2[] = { -70, -1 };
-        mu_layout_row(ctx, 2, w2, 0);
-        if (mu_textbox(ctx, buf, sizeof(buf)) & MU_RES_SUBMIT) {
-            mu_set_focus(ctx, ctx->last_id); // keep focus on the text box
-            submitted = 1;
-        }
-        if (mu_button(ctx, "Submit"))
-        {
-            submitted = 1;
-        }
-        if (submitted) {
-            write_log(buf);
-            buf[0] = '\0';
-        }
-
-        mu_end_window(ctx);
-    }
-}
-
-static void zep_window(mu_Context* ctx) {
+static void zep_window(mu_Context* ctx) 
+{
     if (mu_begin_window_ex(ctx, "Zep", mu_rect(100, 100, 800, 600), MU_OPT_NOFRAME)) {
 
         int w1[] = { -1 };
@@ -233,10 +85,7 @@ static void zep_window(mu_Context* ctx) {
         mu_update_control(ctx, zep_id, rect, 0);
 
         mu_layout_set_next(ctx, rect, 0);
-        zep_x = rect.x;
-        zep_y = rect.y;
-        zep_w = rect.w;
-        zep_h = rect.h;
+        LabZep_position_editor(zep, rect.x, rect.y, rect.w, rect.h);
 
         int w = 5;
         rect.x -= w;
@@ -253,52 +102,6 @@ static void zep_window(mu_Context* ctx) {
 }
 
 
-static int uint8_slider(mu_Context *ctx, uint8_t *value, int low, int high) {
-  static float tmp;
-  mu_push_id(ctx, &value, sizeof(value));
-  tmp = *value;
-  int res = mu_slider_ex(ctx, &tmp, (mu_Real) low, (mu_Real) high, 0, "%.0f", MU_OPT_ALIGNCENTER);
-  *value = (uint8_t) tmp;
-  mu_pop_id(ctx);
-  return res;
-}
-
-
-static void style_window(mu_Context *ctx) {
-  static struct { const char *label; int idx; } colors[] = {
-    { "text:",         MU_COLOR_TEXT        },
-    { "border:",       MU_COLOR_BORDER      },
-    { "windowbg:",     MU_COLOR_WINDOWBG    },
-    { "titlebg:",      MU_COLOR_TITLEBG     },
-    { "titletext:",    MU_COLOR_TITLETEXT   },
-    { "panelbg:",      MU_COLOR_PANELBG     },
-    { "button:",       MU_COLOR_BUTTON      },
-    { "buttonhover:",  MU_COLOR_BUTTONHOVER },
-    { "buttonfocus:",  MU_COLOR_BUTTONFOCUS },
-    { "base:",         MU_COLOR_BASE        },
-    { "basehover:",    MU_COLOR_BASEHOVER   },
-    { "basefocus:",    MU_COLOR_BASEFOCUS   },
-    { "scrollbase:",   MU_COLOR_SCROLLBASE  },
-    { "scrollthumb:",  MU_COLOR_SCROLLTHUMB },
-    { NULL }
-  };
-
-  if (mu_begin_window(ctx, "Style Editor", mu_rect(350, 250, 300, 240))) {
-    int sw = (int) (mu_get_current_container(ctx)->body.w * 0.14f);
-    int w[] = { 80, sw, sw, sw, sw, -1 };
-    mu_layout_row(ctx, 6, w, 0);
-    for (int i = 0; colors[i].label; i++) {
-      mu_label(ctx, colors[i].label);
-      uint8_slider(ctx, &ctx->style->colors[i].r, 0, 255);
-      uint8_slider(ctx, &ctx->style->colors[i].g, 0, 255);
-      uint8_slider(ctx, &ctx->style->colors[i].b, 0, 255);
-      uint8_slider(ctx, &ctx->style->colors[i].a, 0, 255);
-      mu_draw_rect(ctx, mu_layout_next(ctx), ctx->style->colors[i]);
-    }
-    mu_end_window(ctx);
-  }
-}
-
 static void line(float sx, float sy, float ex, float ey)
 {
     sgl_begin_lines();
@@ -307,29 +110,6 @@ static void line(float sx, float sy, float ex, float ey)
     sgl_v2f(ex, ey);
     sgl_end();
 }
-
-static int text_width_cb(mu_Font font, const char* text, int len) {
-    (void)font;
-    if (len == -1) {
-        len = (int) strlen(text);
-    }
-    return r_get_text_width(text, len);
-}
-
-static int text_height_cb(mu_Font font) {
-    (void)font;
-    return r_get_text_height();
-}
-
-/* round to next power of 2 (see bit-twiddling-hacks) */
-static int round_pow2(float v) {
-    uint32_t vi = ((uint32_t) v) - 1;
-    for (uint32_t i = 0; i < 5; i++) {
-        vi |= (vi >> (1<<i));
-    }
-    return (int) (vi + 1);
-}
-
 
 
 /* initialization */
@@ -366,42 +146,39 @@ static void init(void)
     state.font_bold = LabFontLoad("serif-bold", dsb_path.c_str(), LabFontType{ LabFontTypeTTF });
     static std::string csr_path = std::string(lab_font_demo_asset_base) + "Cousine-Regular.ttf";
     state.font_cousine = LabFontLoad("cousine-regular", csr_path.c_str(), LabFontType{ LabFontTypeTTF });
-    
+    static std::string r18_path = std::string(lab_font_demo_asset_base) + "hauer-12.png";// "robot-18.png";
+    state.font_robot18 = LabFontLoad("robot-18", r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });
     add_quit_menu();
+
+    int fontPixelHeight = 18;
+    static LabFontState* microui_st = LabFontStateBake(state.font_robot18,
+        (float)fontPixelHeight, { {255, 255, 255, 255} },
+        LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
+
+    state.mu_ctx = lab_microui_init(microui_st);
+
+    // Zep
+    fontPixelHeight = 18;
+    //static LabFontState* zep_st = LabFontStateBake(state.font_cousine, (float) fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
+    static LabFontState* zep_st = LabFontStateBake(state.font_robot18, (float)fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
+    zep = LabZep_create(zep_st, "Shader.frag", shader.c_str());
 }
-
-
-const int key_map(int c)
-{
-    switch (c & 511) {
-    case SAPP_KEYCODE_LEFT_SHIFT: return MU_KEY_SHIFT;
-    case SAPP_KEYCODE_RIGHT_SHIFT: return MU_KEY_SHIFT;
-    case SAPP_KEYCODE_LEFT_CONTROL: return MU_KEY_CTRL;
-    case SAPP_KEYCODE_RIGHT_CONTROL: return MU_KEY_CTRL;
-    case SAPP_KEYCODE_LEFT_ALT: return MU_KEY_ALT;
-    case SAPP_KEYCODE_RIGHT_ALT: return MU_KEY_ALT;
-    case SAPP_KEYCODE_ENTER: return MU_KEY_RETURN;
-    case SAPP_KEYCODE_BACKSPACE: return MU_KEY_BACKSPACE;
-    }
-    return 0;// c & 511;
-}
-
-static LabZep* zep = nullptr;
-
-static struct {
-    float mouse_pos_x, mouse_pos_y;
-    bool lmb_clicked = false;
-    bool lmb_released = false;
-    bool rmb_clicked = false;
-    bool rmb_released = false;
-} zi;
 
 static void event(const sapp_event* ev) {
 
-    static bool ctrl_l = false;
-    static bool ctrl_r = false;
-    static bool shift_l = false;
-    static bool shift_r = false;
+    // local tracking of modifier keys
+
+    static struct {
+        float mouse_pos_x, mouse_pos_y;
+        bool lmb_clicked = false;
+        bool lmb_released = false;
+        bool rmb_clicked = false;
+        bool rmb_released = false;
+        bool ctrl_l = false;
+        bool ctrl_r = false;
+        bool shift_l = false;
+        bool shift_r = false;
+    } zi;
 
     switch (ev->type) {
         case SAPP_EVENTTYPE_MOUSE_DOWN:
@@ -409,8 +186,7 @@ static void event(const sapp_event* ev) {
             zi.mouse_pos_y = ev->mouse_y;
             zi.lmb_clicked = true;
             zi.lmb_released = false;
-            
-            mu_input_mousedown(&state.mu_ctx, (int)ev->mouse_x, (int)ev->mouse_y, (1<<ev->mouse_button));
+            mu_input_mousedown(state.mu_ctx, (int)ev->mouse_x, (int)ev->mouse_y, (1<<ev->mouse_button));
             break;
 
         case SAPP_EVENTTYPE_MOUSE_UP:
@@ -418,70 +194,61 @@ static void event(const sapp_event* ev) {
             zi.mouse_pos_y = ev->mouse_y;
             zi.lmb_clicked = false;
             zi.lmb_released = true;
-            
-            mu_input_mouseup(&state.mu_ctx, (int)ev->mouse_x, (int)ev->mouse_y, (1<<ev->mouse_button));
+            mu_input_mouseup(state.mu_ctx, (int)ev->mouse_x, (int)ev->mouse_y, (1<<ev->mouse_button));
             break;
 
         case SAPP_EVENTTYPE_MOUSE_MOVE:
             zi.mouse_pos_x = ev->mouse_x;
             zi.mouse_pos_y = ev->mouse_y;
-            
-            mu_input_mousemove(&state.mu_ctx, (int)ev->mouse_x, (int)ev->mouse_y);
+            mu_input_mousemove(state.mu_ctx, (int)ev->mouse_x, (int)ev->mouse_y);
             break;
 
         case SAPP_EVENTTYPE_MOUSE_SCROLL:
-            mu_input_scroll(&state.mu_ctx, 0, (int)ev->scroll_y);
+            mu_input_scroll(state.mu_ctx, 0, (int)ev->scroll_y);
             break;
 
         case SAPP_EVENTTYPE_KEY_DOWN:
             switch (ev->key_code & 511) {
-            case SAPP_KEYCODE_LEFT_SHIFT: shift_l = true; break;
-            case SAPP_KEYCODE_RIGHT_SHIFT: shift_r = true; break;
-            case SAPP_KEYCODE_LEFT_CONTROL: ctrl_l = true; break;
-            case SAPP_KEYCODE_RIGHT_CONTROL: ctrl_r = true; break;
-                //case SAPP_KEYCODE_LEFT_ALT: return MU_KEY_ALT;
-                //case SAPP_KEYCODE_RIGHT_ALT: return MU_KEY_ALT;
-                //case SAPP_KEYCODE_ENTER: return MU_KEY_RETURN;
-                //case SAPP_KEYCODE_BACKSPACE: return MU_KEY_BACKSPACE;
+            case SAPP_KEYCODE_LEFT_SHIFT: zi.shift_l = true; break;
+            case SAPP_KEYCODE_RIGHT_SHIFT: zi.shift_r = true; break;
+            case SAPP_KEYCODE_LEFT_CONTROL: zi.ctrl_l = true; break;
+            case SAPP_KEYCODE_RIGHT_CONTROL: zi.ctrl_r = true; break;
             default:
             {
-                if (state.mu_ctx.focus == zep_id && ev->key_code >= SAPP_KEYCODE_ESCAPE) {
-                    LabZep_input_sokol_key(zep, ev->key_code, shift_l || shift_r, ctrl_l || ctrl_r);
+                if (state.mu_ctx->focus == state.zep_id && ev->key_code >= SAPP_KEYCODE_ESCAPE) {
+                    LabZep_input_sokol_key(zep, ev->key_code, zi.shift_l || zi.shift_r, zi.ctrl_l || zi.ctrl_r);
                 }
                 break;
             }
             }
-            mu_input_keydown(&state.mu_ctx, key_map(ev->key_code));
+            lab_microui_input_sokol_keydown(ev->key_code);
             break;
 
             case SAPP_EVENTTYPE_KEY_UP:
             switch (ev->key_code & 511) {
-            case SAPP_KEYCODE_LEFT_SHIFT: shift_l = false; break;
-            case SAPP_KEYCODE_RIGHT_SHIFT: shift_r = false; break;
-            case SAPP_KEYCODE_LEFT_CONTROL: ctrl_l = false; break;
-            case SAPP_KEYCODE_RIGHT_CONTROL: ctrl_r = false; break;
-                //case SAPP_KEYCODE_LEFT_ALT: return MU_KEY_ALT;
-                //case SAPP_KEYCODE_RIGHT_ALT: return MU_KEY_ALT;
-                //case SAPP_KEYCODE_ENTER: return MU_KEY_RETURN;
-                //case SAPP_KEYCODE_BACKSPACE: return MU_KEY_BACKSPACE;
+            case SAPP_KEYCODE_LEFT_SHIFT: zi.shift_l = false; break;
+            case SAPP_KEYCODE_RIGHT_SHIFT: zi.shift_r = false; break;
+            case SAPP_KEYCODE_LEFT_CONTROL: zi.ctrl_l = false; break;
+            case SAPP_KEYCODE_RIGHT_CONTROL: zi.ctrl_r = false; break;
             }
-
-            mu_input_keyup(&state.mu_ctx, key_map(ev->key_code));
+            lab_microui_input_sokol_keydown(ev->key_code);
             break;
 
         case SAPP_EVENTTYPE_CHAR:
-            if (state.mu_ctx.focus == zep_id) {
-                LabZep_input_sokol_key(zep, ev->char_code, shift_l || shift_r, ctrl_l || ctrl_r);
+            if (state.mu_ctx->focus == state.zep_id) {
+                LabZep_input_sokol_key(zep, ev->char_code, zi.shift_l || zi.shift_r, zi.ctrl_l || zi.ctrl_r);
             }
             else {
-                char txt[2] = { (char)(ev->char_code & 255), 0 };
-                mu_input_text(&state.mu_ctx, txt);
+                lab_microui_input_sokol_text(ev->char_code);
             }
             break;
 
         default:
             break;
     }
+    LabZep_process_events(zep,
+        zi.mouse_pos_x, zi.mouse_pos_y, zi.lmb_clicked, zi.lmb_released,
+        zi.rmb_clicked, zi.rmb_released);
 }
 
 void fontDemo(float& dx, float& dy, float sx, float sy) {
@@ -549,6 +316,33 @@ void fontDemo(float& dx, float& dy, float sx, float sy) {
     dy += 30 * dpis;
     LabFontDraw("Right", dx, dy, l_st);
     //-------------------------------------
+    sz = 18.f * dpis;
+    static LabFontState* p2_st = LabFontStateBake(state.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignTop }, 0, 0);
+    dx = 350 * dpis; 
+    dy = 450 * dpis;
+    line(dx - 10 * dpis, dy, dx + 250 * dpis, dy);
+    dx = LabFontDraw("Top", dx, dy, p2_st);
+    static LabFontState* g2_st = LabFontStateBake(state.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignMiddle }, 0, 0);
+    dx += 10 * dpis;
+    dx = LabFontDraw("Middle", dx, dy, g2_st);
+    dx += 10 * dpis;
+    static LabFontState* q2_st = LabFontStateBake(state.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignBaseline }, 0, 0);
+    dx = LabFontDraw("Baseline", dx, dy, q2_st);
+    dx += 10 * dpis;
+    static LabFontState* h2_st = LabFontStateBake(state.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignBottom }, 0, 0);
+    LabFontDraw("Bottom", dx, dy, h2_st);
+    dx = 450 * dpis; 
+    dy = 500 * dpis;
+    line(dx, dy - 30 * dpis, dx, dy + 80.0f * dpis);
+    static LabFontState* i2_st = LabFontStateBake(state.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignBaseline }, 0, 0);
+    static LabFontState* k2_st = LabFontStateBake(state.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignCenter | LabFontAlignBaseline }, 0, 0);
+    static LabFontState* l2_st = LabFontStateBake(state.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignRight | LabFontAlignBaseline }, 0, 0);
+    LabFontDraw("Left", dx, dy, i2_st);
+    dy += 30 * dpis;
+    LabFontDraw("Center", dx, dy, k2_st);
+    dy += 30 * dpis;
+    LabFontDraw("Right", dx, dy, l2_st);
+    //-------------------------------------
     dx = 500 * dpis; dy = 350 * dpis;
     sz = 60.f * dpis;
     static LabFontState* m_st = LabFontStateBake(state.font_italic, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignBaseline }, 5.f * dpis, 10.f);
@@ -562,80 +356,65 @@ void fontDemo(float& dx, float& dy, float sx, float sy) {
     LabFontDraw("DROP THAT SHADOW", dx, dy, o_st);
 }
 
+extern sg_image debug_texture;
+
 /* do one frame */
 void frame(void) {
 
-    static bool init_zep = true;
-    if (init_zep && state.font_cousine >= 0)
-    {
-        int fontPixelHeight = 20;
-        static LabFontState* microui_st = LabFontStateBake(state.font_cousine, 
-            (float) fontPixelHeight, { {255, 255, 255, 255} }, 
-            LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
+    //-------------------------------------------------------------------------
+    // Pre-sgl render pass
 
-        /* setup microui renderer */
-        r_init(microui_st);
+    //-------------------------------------------------------------------------
+    // sgl render pass
 
-        /* setup microui */
-        mu_init(&state.mu_ctx);
-        state.mu_ctx.text_width = text_width_cb;
-        state.mu_ctx.text_height = text_height_cb;
-
-        fontPixelHeight = 18;
-        static LabFontState* zep_st = LabFontStateBake(state.font_cousine, (float) fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
-        zep = LabZep_create(zep_st, "Shader.frag", shader.c_str());
-        init_zep = false;
-    }
-
-    if (init_zep)
-        return;
-    
     /* text rendering via fontstash.h */
     float sx, sy, dx, dy, lh = 0.0f;
     const float dpis = state.dpi_scale;
     sx = 50*dpis; sy = 50*dpis;
     dx = sx; dy = sy;
 
+
     sgl_defaults();
     sgl_matrix_mode_projection();
     sgl_ortho(0.0f, (float) sapp_width(), (float) sapp_height(), 0.0f, -1.0f, +1.0f);
     sgl_scissor_rect(0, 0, sapp_width(), sapp_height(), true);
 
-    fontDemo(dx, dy, sx, sy);
+    if (false) {
+        sgl_enable_texture();
+        sgl_texture(debug_texture);
+        sgl_begin_quads();
+        float x0 = 100; float x1 = 800;
+        float y0 = 100; float y1 = 600;
+        float u0 = 0; float u1 = 1;
+        float v0 = 0; float v1 = 1;
+        sgl_c4b(255, 255, 255, 255);
+        sgl_v2f_t2f(x0, y0, u0, v0);
+        sgl_v2f_t2f(x1, y0, u1, v0);
+        sgl_v2f_t2f(x1, y1, u1, v1);
+        sgl_v2f_t2f(x0, y1, u0, v1);
+        sgl_end();
+    }
 
-    //---- UI layer
+    if (true) {
+        fontDemo(dx, dy, sx, sy);
+    }
+
+    //---- sgl UI layer
     if (true) {
         /* UI definition */
-        mu_begin(&state.mu_ctx);
-        test_window(&state.mu_ctx);
-        log_window(&state.mu_ctx);
-        zep_window(&state.mu_ctx);
-        style_window(&state.mu_ctx);
-        mu_end(&state.mu_ctx);
+        mu_begin(state.mu_ctx);
+        microui_test_window(state.mu_ctx);
+        log_window(state.mu_ctx);
+        zep_window(state.mu_ctx);
+        microui_style_window(state.mu_ctx);
+        mu_end(state.mu_ctx);
 
-        LabZep_process_events(zep, zep_x, zep_y, zep_w, zep_h,
-            zi.mouse_pos_x, zi.mouse_pos_y, zi.lmb_clicked, zi.lmb_released,
-            zi.rmb_clicked, zi.rmb_released);
-
-        /* micro-ui rendering */
-        r_begin(sapp_width(), sapp_height());
-        //r_clear(mu_color(bg[0], bg[1], bg[2], 255));
-        mu_Command* cmd = 0;
-        while(mu_next_command(&state.mu_ctx, &cmd)) {
-            switch (cmd->type) {
-                case MU_COMMAND_TEXT: r_draw_text(cmd->text.str, cmd->text.pos, cmd->text.color); break;
-                case MU_COMMAND_RECT: r_draw_rect(cmd->rect.rect, cmd->rect.color); break;
-                case MU_COMMAND_ICON: r_draw_icon(cmd->icon.id, cmd->icon.rect, cmd->icon.color); break;
-                case MU_COMMAND_CLIP: r_set_clip_rect(cmd->clip.rect); break;
-                case MU_COMMAND_ZEP: LabZep_render(zep); break;
-            }
-        }
-        r_end();
+        lab_microui_render(sapp_width(), sapp_height(), zep);
     }
 
     LabFontCommitTexture();
 
-    // begin rendering with a clear pass
+    // begin sokol GL rendering with a clear pass
     sg_pass_action pass_action;
     memset(&pass_action, 0, sizeof(pass_action));
     pass_action.colors[0].action = SG_ACTION_CLEAR;
@@ -646,6 +425,10 @@ void frame(void) {
     sgl_draw();
 
     sg_end_pass();
+
+    //-------------------------------------------------------------------------
+    // Post-sgl render pass goes here
+
     sg_commit();
 }
 

@@ -29,6 +29,7 @@ target_compile_definitions(sokol PRIVATE
     #IMGUI_DEFINE_MATH_OPERATORS
     #HAVE_IMGUI
     ${PLATFORM_DEFS}
+    SOKOL_WIN32_FORCE_MAIN # enable for a console application on Windows
 )
 
 if (WIN32)

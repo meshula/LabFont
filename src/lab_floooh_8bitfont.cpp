@@ -1,6 +1,6 @@
 
 
-#include "lab_sokol.h"
+#include "../LabSokol.h"
 #include <cmath>
 #include <cstdint>
 

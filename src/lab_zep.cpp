@@ -1,6 +1,6 @@
 
-#include "LabZep.h"
-#include "lab_sokol.h"
+#include "../LabZep.h"
+#include "../LabSokol.h"
 #include "../LabFont.h"
 
 #include <zep/display.h>
@@ -32,7 +32,7 @@ namespace
             , m_fontScale(1.f)
         {
             LabFontSize sz = LabFontMeasure("", font);
-            SetPixelHeight(sz.h);
+            SetPixelHeight(sz.height);
         }
 
         virtual void SetPixelHeight(int pixelHeight) override
@@ -44,7 +44,7 @@ namespace
         virtual NVec2f GetTextSize(const uint8_t* pBegin, const uint8_t* pEnd = nullptr) const override
         {
             LabFontSize sz = LabFontMeasureSubstring((const char*) pBegin, (const char*) pEnd, font);
-            return { sz.w, sz.h };
+            return { sz.width, sz.height };
         }
 
     private:
@@ -82,20 +82,6 @@ namespace
         void DrawChars(ZepFont& zfont, const NVec2f& pos, const NVec4f& color, const uint8_t* text_begin, const uint8_t* text_end) const override
         {
             auto font = static_cast<LabVimFont&>(zfont);
-            /*
-            auto scale = GetPixelScale();
-            float fontSize = (float)font.GetPixelHeight() * scale.x;
-
-
-            fonsSetFont(font.context, font.font_index);
-            fonsSetSize(font.context, fontSize);
-            fonsSetColor(font.context, ToPackedABGR(col));
-            fonsSetAlign(font.context, FONS_ALIGN_LEFT | FONS_ALIGN_BOTTOM);
-
-            float line_height = 0;
-            fonsVertMetrics(font.context, NULL, NULL, &line_height);
-            line_height *= scale.y;
-            */
 
             bool need_clip = m_clipRect.Width() != 0;
             if (need_clip)
@@ -106,7 +92,7 @@ namespace
             c.rgba[1] = uint8_t(color.y * 255);
             c.rgba[2] = uint8_t(color.z * 255);
             c.rgba[3] = uint8_t(color.w * 255);
-            LabFontDrawSubstringColor((const char*) text_begin, (const char*) text_end, &c, pos.x, pos.y, font.font);
+            LabFontDrawSubstringColor((const char*)text_begin, (const char*)text_end, &c, pos.x, pos.y, font.font);
 
             if (need_clip)
                 sgl_pop_scissor_rect();
@@ -351,9 +337,6 @@ namespace
                 else
                     newBuffer = spEditor->InitWithText("README.md", "Hello World\nThis a test\nA third line of text that is very long and I wonder if it will wrap and oh hey look at this it is pretty long, but is it long enough? Not sure\n");
             }
-
-
-
 
             // File watcher not used on apple yet ; needs investigating as to why it doesn't compile/run
             // The watcher is being used currently to update the config path, but clients may want to do more interesting things
@@ -615,7 +598,6 @@ extern "C" void LabZep_render(LabZep* zep)
 }
 
 extern "C" void LabZep_process_events(LabZep* zep, 
-    int x, int y, int w, int h,
     float mouse_x, float mouse_y,
     bool lmb_clicked, bool lmb_released, bool rmb_clicked, bool rmb_released)
 {
@@ -623,8 +605,6 @@ extern "C" void LabZep_process_events(LabZep* zep,
         zi.keys.clear();
         return;
     }
-
-    zep->zep->spEditor->SetDisplayRegion(Zep::NVec2f((float)x, (float)y), Zep::NVec2f((float)x + w, (float)y + h));
 
     // Display the editor inside this window
     const Zep::ZepBuffer& buffer = zep->zep->spEditor->GetActiveTabWindow()->GetActiveWindow()->GetBuffer();
@@ -644,6 +624,12 @@ extern "C" void LabZep_process_events(LabZep* zep,
             key & (Zep::ModifierKey::Ctrl << 8),
             key & (Zep::ModifierKey::Shift << 8));
     }
+}
+
+extern "C" void LabZep_position_editor(LabZep * zep,
+    int x, int y, int w, int h)
+{
+    zep->zep->spEditor->SetDisplayRegion(Zep::NVec2f((float)x, (float)y), Zep::NVec2f((float)x + w, (float)y + h));
 }
 
 extern "C" bool LabZep_update_required(LabZep * zep)
