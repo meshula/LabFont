@@ -73,17 +73,22 @@ namespace
 
         void ApplyClip() const
         {
-            sgl_push_scissor_rect();
-            sgl_scissor_rect((int)m_clipRect.topLeftPx.x, (int)m_clipRect.topLeftPx.y,
-                (int)m_clipRect.bottomRightPx.x - (int)m_clipRect.topLeftPx.x,
-                (int)m_clipRect.bottomRightPx.y - (int)m_clipRect.topLeftPx.y, true);
+            sgl_scissor_rect((int)_clipRect.topLeftPx.x, (int)_clipRect.topLeftPx.y,
+                (int)_clipRect.bottomRightPx.x - (int)_clipRect.topLeftPx.x,
+                (int)_clipRect.bottomRightPx.y - (int)_clipRect.topLeftPx.y, true);
+        }
+        void RestoreClip() const
+        {
+            sgl_scissor_rect((int)_restoreClipRect.topLeftPx.x, (int)_restoreClipRect.topLeftPx.y,
+                (int)_restoreClipRect.bottomRightPx.x - (int)_restoreClipRect.topLeftPx.x,
+                (int)_restoreClipRect.bottomRightPx.y - (int)_restoreClipRect.topLeftPx.y, true);
         }
 
         void DrawChars(ZepFont& zfont, const NVec2f& pos, const NVec4f& color, const uint8_t* text_begin, const uint8_t* text_end) const override
         {
             auto font = static_cast<LabVimFont&>(zfont);
 
-            bool need_clip = m_clipRect.Width() != 0;
+            bool need_clip = _clipRect.Width() != 0;
             if (need_clip)
                 ApplyClip();
 
@@ -95,13 +100,13 @@ namespace
             LabFontDrawSubstringColor((const char*)text_begin, (const char*)text_end, &c, pos.x, pos.y, font.font);
 
             if (need_clip)
-                sgl_pop_scissor_rect();
+                RestoreClip();
         }
 
         void DrawLine(const NVec2f& start, const NVec2f& end, const NVec4f& color, float width) const override
         {
             // Background rect for numbers
-            bool need_clip = m_clipRect.Width() != 0;
+            bool need_clip = _clipRect.Width() != 0;
             if (need_clip)
                 ApplyClip();
 
@@ -111,13 +116,13 @@ namespace
             sgl_end();
 
             if (need_clip)
-                sgl_pop_scissor_rect();
+                RestoreClip();
         }
 
         void DrawRectFilled(const NRectf& rc, const NVec4f& color) const override
         {
             // Background rect for numbers
-            bool need_clip = m_clipRect.Width() != 0;
+            bool need_clip = _clipRect.Width() != 0;
             if (need_clip)
                 ApplyClip();
 
@@ -129,12 +134,17 @@ namespace
             sgl_end();
 
             if (need_clip)
-                sgl_pop_scissor_rect();
+                RestoreClip();
+        }
+
+        void SetRestoreClipRect(const NRectf& rc)
+        {
+            _restoreClipRect = rc;
         }
 
         virtual void SetClipRect(const NRectf& rc) override
         {
-            m_clipRect = rc;
+            _clipRect = rc;
         }
 
         virtual ZepFont& GetFont(ZepTextType type) override
@@ -143,7 +153,8 @@ namespace
         }
 
     private:
-        NRectf m_clipRect;
+        NRectf _restoreClipRect;
+        NRectf _clipRect;
     };
 
 
@@ -152,8 +163,11 @@ namespace
     class LabZepEventHandler : public ZepEditor
     {
     public:
-        LabZepEventHandler(const ZepPath& root, const NVec2f& pixelScale, uint32_t flags = 0, IZepFileSystem* pFileSystem = nullptr)
-            : ZepEditor(new LabZepRender(pixelScale), root, flags, pFileSystem)
+        LabZepEventHandler(
+            const ZepPath& root, const NVec2f& pixelScale,
+            LabZepRender* renderer,
+            uint32_t flags = 0, IZepFileSystem* pFileSystem = nullptr)
+            : ZepEditor(renderer, root, flags, pFileSystem)
         {
         }
 
@@ -294,12 +308,16 @@ namespace
     // A helper struct to init the editor and handle callbacks
     struct LabZepDetail : public IZepComponent, public IZepReplProvider
     {
+        LabZepRender* renderer = nullptr;
+
         LabZepDetail(const std::string& startupFilePath, const std::string& configPath,
             LabFontState* font, const char* initialText)
-            : spEditor(std::make_unique<LabZepEventHandler>(configPath, GetPixelScale()))
             //, fileWatcher(spEditor->GetFileSystem().GetConfigPath(), std::chrono::seconds(2))
         {
             //        chibi_init(scheme, SDL_GetBasePath());
+
+            renderer = new LabZepRender(GetPixelScale());
+            spEditor = std::make_unique<LabZepEventHandler>(configPath, GetPixelScale(), renderer);
 
             auto& display = static_cast<LabZepRender&>(spEditor->GetDisplay());
 
@@ -358,6 +376,7 @@ namespace
         {
             spEditor->UnRegisterCallback(this);
             spEditor.reset();
+            delete renderer;
         }
 
         virtual std::string ReplParse(ZepBuffer& buffer, const GlyphIterator& cursorOffset, ReplParseType type) override
@@ -629,7 +648,8 @@ extern "C" void LabZep_process_events(LabZep* zep,
 extern "C" void LabZep_position_editor(LabZep * zep,
     int x, int y, int w, int h)
 {
-    zep->zep->spEditor->SetDisplayRegion(Zep::NVec2f((float)x, (float)y), Zep::NVec2f((float)x + w, (float)y + h));
+    zep->zep->renderer->SetRestoreClipRect({ (float)x, (float)y, (float)w, (float)h });
+    zep->zep->spEditor->SetDisplayRegion({ (float)x, (float)y }, {(float)x + w, (float)y + h });
 }
 
 extern "C" bool LabZep_update_required(LabZep * zep)

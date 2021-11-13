@@ -1,10 +1,10 @@
 
 cmake_minimum_required(VERSION 3.19)
-project(meshula-font C CXX)
+project(LabFont C CXX)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
-set(meshula_font_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+set(LABFONT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Don't report that sample file installation up to date
 set(CMAKE_INSTALL_MESSAGE LAZY)
@@ -21,16 +21,15 @@ endif()
 
 include(sokol.cmake)
 
-configure_file("${meshula_font_ROOT}/LabFontDemo.config.h"
-               "${meshula_font_ROOT}/LabFontDemo.h" @ONLY)
+configure_file("${LABFONT_ROOT}/LabFontDemo.config.h"
+               "${LABFONT_ROOT}/LabFontDemo.h" @ONLY)
 
 set(SRC
     src/fontstash.h
-    src/lab_sokol.h
+    LabSokol.h
     src/LabFont.cpp
     src/LabFontDemo.cpp
     src/lab_zep.cpp
-    src/lab_microui.h
     src/lab_microui.cpp
     src/main.cpp
     src/microui.c
@@ -60,7 +59,7 @@ set(BUILD_DEMOS OFF)
 set(BUILD_TESTS OFF)
 add_subdirectory(third/zep)
 
-add_executable(meshula-font MACOSX_BUNDLE ${SRC} ${PLATFORM_SRC})
+add_executable(LabFontDemo MACOSX_BUNDLE ${SRC} ${PLATFORM_SRC})
 
 if (APPLE)
   #  list(APPEND LIBS
@@ -71,10 +70,10 @@ if (APPLE)
         ${CMAKE_CURRENT_SOURCE_DIR}/resources/MacBundleInfo.plist.in
         ${CMAKE_CURRENT_BINARY_DIR}/resources/MacBundleInfo.plist)
 
-    set_target_properties(meshula-font PROPERTIES
+    set_target_properties(LabFontDemo PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_BINARY_DIR}/resources/MacBundleInfo.plist)
 
-    target_compile_definitions(meshula-font PRIVATE
+    target_compile_definitions(LabFontDemo PRIVATE
         ${ST_GFX_DEFS}
         ${PLATFORM_DEFS}
     )
@@ -84,7 +83,7 @@ elseif(WIN32)
 #        "-lopengl32"
 #    )
 
-    target_compile_definitions(meshula-font PRIVATE
+    target_compile_definitions(LabFontDemo PRIVATE
         ${ST_GFX_DEFS}
         ${PLATFORM_DEFS}
         _CRT_SECURE_NO_WARNINGS
@@ -95,33 +94,33 @@ else()
     )
 endif()
 
-target_include_directories(meshula-font PRIVATE
+target_include_directories(LabFontDemo PRIVATE
     third
     third/rapidjson/include
     third/zep/include)
 
 if (WIN32)
-    target_link_libraries(meshula-font PRIVATE
+    target_link_libraries(LabFontDemo PRIVATE
         ${LIBS} sokol::sokol Zep::Zep)
     #    "-lglfw" "-lavcodec" "-lavformat" "-lswscale" ${LIBS})
 else()
-    target_link_libraries(meshula-font PRIVATE
+    target_link_libraries(LabFontDemo PRIVATE
         "-lstdc++" ${LIBS} sokol::sokol Zep::Zep)
     #    "-lglfw" "-lavcodec" "-lavformat" "-lswscale" ${LIBS})
 endif()
 
-install(TARGETS meshula-font 
+install(TARGETS LabFontDemo 
          RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
          BUNDLE  DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 
 install(FILES
-    "${meshula_font_ROOT}/resources/DroidSansJapanese.ttf"
-    "${meshula_font_ROOT}/resources/DroidSerif-Bold.ttf"
-    "${meshula_font_ROOT}/resources/DroidSerif-Italic.ttf"
-    "${meshula_font_ROOT}/resources/DroidSerif-Regular.ttf"
-    "${meshula_font_ROOT}/resources/robot-18.png"
-    "${meshula_font_ROOT}/resources/robot-18.font.json"
-    "${meshula_font_ROOT}/resources/hauer-12.png"
-    "${meshula_font_ROOT}/resources/hauer-12.font.json"
-    "${meshula_font_ROOT}/third/zep/demos/demo_imgui/res/Cousine-Regular.ttf"
+    "${LABFONT_ROOT}/resources/DroidSansJapanese.ttf"
+    "${LABFONT_ROOT}/resources/DroidSerif-Bold.ttf"
+    "${LABFONT_ROOT}/resources/DroidSerif-Italic.ttf"
+    "${LABFONT_ROOT}/resources/DroidSerif-Regular.ttf"
+    "${LABFONT_ROOT}/resources/robot-18.png"
+    "${LABFONT_ROOT}/resources/robot-18.font.json"
+    "${LABFONT_ROOT}/resources/hauer-12.png"
+    "${LABFONT_ROOT}/resources/hauer-12.font.json"
+    "${LABFONT_ROOT}/third/zep/demos/demo_imgui/res/Cousine-Regular.ttf"
     DESTINATION share/lab_font_demo)
