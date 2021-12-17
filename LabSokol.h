@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sokol_app.h"
-#include "sokol_fetch.h"
+//#include "sokol_fetch.h"
 #include "sokol_gfx.h"
 #include "fontstash.h"
 #include "sokol_fontstash.h"

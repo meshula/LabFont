@@ -17,6 +17,10 @@
 
  */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 const int LabFontTypeTTF = 0;
 const int LabFontTypeQuadplay = 1;
 struct LabFontType { int type; };
@@ -41,30 +45,45 @@ const int LabFontAlignCenter = 32;
 const int LabFontAlignRight = 64;
 struct LabFontAlign { int alignment; };
 
-LabFont* LabFontLoad(const char* name, const char* path, LabFontType type);
-LabFont* LabFontGet(const char* name);
+struct LabFont* LabFontLoad(const char* name, const char* path, struct LabFontType type);
+struct LabFont* LabFontGet(const char* name);
 
 // note that blur only works with LabFontTypeTTF
-LabFontState* LabFontStateBake(
-    LabFont* font,
+struct LabFontState* LabFontStateBake(
+    struct LabFont* font,
     float size,
-    LabFontColor,
-    LabFontAlign alignment,
+    struct LabFontColor,
+    struct LabFontAlign alignment,
     float spacing,
     float blur);
 
+// a version to work around languages that can't bind structs as values
+struct LabFontState* LabFontStateBake_bind(
+    struct LabFont* font,
+    float size,
+    struct LabFontColor*,
+    struct LabFontAlign* alignment,
+    float spacing,
+    float blur);
+
+
+
 // returns first pixel's x coordinate following the drawn text
-float LabFontDraw(const char* str, float x, float y, LabFontState* fs);
+float LabFontDraw(const char* str, float x, float y, struct LabFontState* fs);
 
 // returns first pixel following the drawn text, overrides color in font state
-float LabFontDrawColor(const char* str, LabFontColor* c, float x, float y, LabFontState* fs);
-float LabFontDrawSubstringColor(const char* str, const char* end, LabFontColor* c, float x, float y, LabFontState* fs);
+float LabFontDrawColor(const char* str, struct LabFontColor* c, float x, float y, struct LabFontState* fs);
+float LabFontDrawSubstringColor(const char* str, const char* end, struct LabFontColor* c, float x, float y, struct LabFontState* fs);
 
 // measure a string. Measuring an empty string will fill in font metrics to ascender, descender, and h.
-LabFontSize LabFontMeasure(const char* str, LabFontState* fs);
-LabFontSize LabFontMeasureSubstring(const char* str, const char* end, LabFontState* fs);
+struct LabFontSize LabFontMeasure(const char* str, struct LabFontState* fs);
+struct LabFontSize LabFontMeasureSubstring(const char* str, const char* end, struct LabFontState* fs);
 
 // this should be called once before rendering text, after all a frame's LabFontDraw calls have been made.
 void LabFontCommitTexture();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

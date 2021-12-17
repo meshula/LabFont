@@ -2,11 +2,14 @@
 
 #include "../LabFont.h"
 #include "../LabSokol.h"
+
 #include "fontstash.h"
-#include "rapidjson/document.h"
+#include "sokol_fontstash.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+#include "rapidjson/document.h"
 
 #include <array>
 #include <map>
@@ -113,7 +116,7 @@ namespace LabFontInternal {
 
 }
 
-
+extern "C"
 LabFontState* LabFontStateBake(LabFont* font,
     float size,
     LabFontColor color,
@@ -139,12 +142,24 @@ LabFontState* LabFontStateBake(LabFont* font,
     return st;
 }
 
+extern "C"
+struct LabFontState* LabFontStateBake_bind(struct LabFont* font,
+    float size,
+    struct LabFontColor* color,
+    struct LabFontAlign* alignment,
+    float spacing,
+    float blur)
+{
+    return LabFontStateBake(font, size, *color, *alignment, spacing, blur);
+}
+
 sg_image debug_texture;
 static std::array<int, 256> qp_font_map;
 std::array<int, 256> build_quadplay_font_map();
 
 static std::map<std::string, std::unique_ptr<LabFont>> fonts;
 
+extern "C"
 LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
 {
     std::string key(name);
@@ -424,7 +439,7 @@ float LabFontDraw(const char* str, float x, float y, LabFontState* fs)
     if (!fs || !str)
         return x;
 
-    if (fs->font->id > 0) {
+    if (fs->font->id >= 0) {
         LabFontInternal::fontstash_bind(fs);
         FONScontext* fc = LabFontInternal::fontStash();
         return fonsDrawText(fc, x, y, str, NULL);

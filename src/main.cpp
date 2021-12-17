@@ -5,7 +5,6 @@
 #include "../LabFontDemo.h"
 #include "microui_demo.h"
 
-#define LABFONT_IMPL
 #include "../LabFont.h"
 
 #include <queue>
