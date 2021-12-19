@@ -18,7 +18,7 @@
 
 struct LabFont
 {
-    int id;           // non-zero for a TTF
+    int id;           // >= zero for a TTF
 
     sg_image img;     // non-zero for a QuadPlay texture
     int img_w, img_h; // non-zero for a QuadPlay texture
@@ -188,6 +188,8 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
         {
             return nullptr;
         }
+
+        r->id = -1;
 
         bool mono_numeric = true;
         bool monospaced = false;
