@@ -23,6 +23,8 @@ extern "C" {
 
 const int LabFontTypeTTF = 0;
 const int LabFontTypeQuadplay = 1;
+const int LabFontTypeSokol8x8 = 2;
+
 struct LabFontType { int type; };
 
 struct LabFont;
