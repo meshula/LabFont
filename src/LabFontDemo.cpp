@@ -17,6 +17,20 @@ static struct {
     float dpi_scale = 1.f;
 } font_demo;
 
+
+
+static void line(float sx, float sy, float ex, float ey)
+{
+    sgl_begin_lines();
+    sgl_c4b(255, 255, 0, 128);
+    sgl_v2f(sx, sy);
+    sgl_v2f(ex, ey);
+    sgl_end();
+}
+
+
+
+
 void font_demo_init()
 {
     static std::string dsj_path = 
