@@ -122,5 +122,5 @@ install(FILES
     "${LABFONT_ROOT}/resources/robot-18.font.json"
     "${LABFONT_ROOT}/resources/hauer-12.png"
     "${LABFONT_ROOT}/resources/hauer-12.font.json"
-    "${LABFONT_ROOT}/third/zep/demos/demo_imgui/res/Cousine-Regular.ttf"
+    "${LABFONT_ROOT}/resources/Cousine-Regular.ttf"
     DESTINATION share/lab_font_demo)
