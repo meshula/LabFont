@@ -31,35 +31,30 @@ static void line(float sx, float sy, float ex, float ey)
 
 
 
-void font_demo_init()
+void font_demo_init(const char* path_)
 {
-    static std::string dsj_path = 
-        std::string(lab_font_demo_asset_base) + "DroidSansJapanese.ttf";
+    std::string path(path_);
+    static std::string dsj_path = path + "DroidSansJapanese.ttf";
     font_demo.font_japanese = LabFontLoad("sans-japanese", dsj_path.c_str(), 
             LabFontType{ LabFontTypeTTF });
 
-    static std::string dsr_path = 
-        std::string(lab_font_demo_asset_base) + "DroidSerif-Regular.ttf";
+    static std::string dsr_path = path + "DroidSerif-Regular.ttf";
     font_demo.font_normal = LabFontLoad("serif-normal", 
             dsr_path.c_str(), LabFontType{ LabFontTypeTTF });
     
-    static std::string dsi_path = 
-        std::string(lab_font_demo_asset_base) + "DroidSerif-Italic.ttf";
+    static std::string dsi_path = path + "DroidSerif-Italic.ttf";
     font_demo.font_italic = LabFontLoad("serif-italic", 
             dsi_path.c_str(), LabFontType{ LabFontTypeTTF });
     
-    static std::string dsb_path = 
-        std::string(lab_font_demo_asset_base) + "DroidSerif-Bold.ttf";
+    static std::string dsb_path = path + "DroidSerif-Bold.ttf";
     font_demo.font_bold = LabFontLoad("serif-bold", 
             dsb_path.c_str(), LabFontType{ LabFontTypeTTF });
     
-    static std::string csr_path = 
-        std::string(lab_font_demo_asset_base) + "Cousine-Regular.ttf";
+    static std::string csr_path = path + "Cousine-Regular.ttf";
     font_demo.font_cousine = LabFontLoad("cousine-regular", 
             csr_path.c_str(), LabFontType{ LabFontTypeTTF });
     
-    static std::string r18_path =
-        std::string(lab_font_demo_asset_base) + "hauer-12.png";// "robot-18.png";
+    static std::string r18_path = path + "hauer-12.png";// "robot-18.png";
     font_demo.font_robot18 = LabFontLoad("robot-18", 
             r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });    
 }
