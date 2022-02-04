@@ -95,6 +95,7 @@ else()
 endif()
 
 target_include_directories(LabFontDemo PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
     third
     third/rapidjson/include
     third/zep/include)
