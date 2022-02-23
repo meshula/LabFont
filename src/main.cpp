@@ -2,7 +2,7 @@
 #include "../LabSokol.h"
 #include "../LabMicroUI.h"
 #include "../LabZep.h"
-#include "../LabFontDemo.h"
+#include "LabDirectories.h"
 #include "microui_demo.h"
 
 #include "../LabFont.h"
@@ -105,7 +105,7 @@ static void line(float sx, float sy, float ex, float ey)
 
 
 /* initialization */
-static void init(void) 
+static void init() 
 {
     state.dpi_scale = sapp_dpi_scale();
 
@@ -130,7 +130,15 @@ static void init(void)
 
     add_quit_menu();
 
-    static std::string r18_path = std::string(lab_font_demo_asset_base) + "hauer-12.png";// "robot-18.png";
+    const char* dir = lab_application_resource_path(g_app_path.c_str(), 
+                "share/lab_font_demo");
+    if (!dir) {
+        printf("Could not find share/lab_font_demo\n");
+        exit(0);
+    }
+    static std::string asset_root(dir);
+
+    static std::string r18_path = asset_root + "/hauer-12.png";// "/robot-18.png";
     static LabFont* font_robot18 = LabFontLoad("robot-18", r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });
 
     int fontPixelHeight = 18;
@@ -321,11 +329,7 @@ static void cleanup(void) {
 extern "C"
 sapp_desc sokol_main(int argc, char* argv[])
 {
-    std::string app_path(argv[0]);
-    size_t index = app_path.rfind('/');
-    if (index == std::string::npos)
-        index = app_path.rfind('\\');
-    g_app_path = app_path.substr(0, index);
+    g_app_path = std::string(argv[0]);
 
     sapp_desc desc = { };
     desc.init_cb = init;

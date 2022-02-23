@@ -5,30 +5,37 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(LABFONT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+option(LABFONT_SOKOL "Use Sokol as the renderer" ON)
 
 # Don't report that sample file installation up to date
 set(CMAKE_INSTALL_MESSAGE LAZY)
 
-if(APPLE)
-    set(ST_GFX_DEFS
-        SOKOL_METAL
-)
-else()
-    set(ST_GFX_DEFS
-        SOKOL_D3D11
-    )
+if (LABFONT_SOKOL)
+    if(APPLE)
+        set(ST_GFX_DEFS
+            SOKOL_METAL
+            )
+    else()
+        set(ST_GFX_DEFS
+            SOKOL_D3D11
+            )
+    endif()
+
+    include(sokol.cmake)
+
+    set(LABFONT_PLATFORM_SRC
+        src/LabFontDemo-sokol.cpp)
+
+    set(LABFONT_PLATFORM_LIBS sokol::sokol)
 endif()
 
-include(sokol.cmake)
-
-configure_file("${LABFONT_ROOT}/LabFontDemo.config.h"
-               "${LABFONT_ROOT}/LabFontDemo.h" @ONLY)
-
 set(SRC
+    ${LABFONT_PLATFORM_SRC}
     src/fontstash.h
+    src/LabDirectories.cpp
+    src/LabDirectories.h
     LabSokol.h
     src/LabFont.cpp
-    src/LabFontDemo.cpp
     src/lab_zep.cpp
     src/lab_microui.cpp
     src/main.cpp
@@ -44,7 +51,6 @@ set(SRC
     third/zep/extensions/repl/mode_repl.cpp
     third/zep/extensions/repl/mode_repl.h
     LabFont.h
-    LabFontDemo.h
     LabZep.h
     #src/VideoReader.c
     #src/VideoReader.h
@@ -102,11 +108,11 @@ target_include_directories(LabFontDemo PRIVATE
 
 if (WIN32)
     target_link_libraries(LabFontDemo PRIVATE
-        ${LIBS} sokol::sokol Zep::Zep)
+        ${LIBS} ${LABFONT_PLATFORM_LIBS} Zep::Zep)
     #    "-lglfw" "-lavcodec" "-lavformat" "-lswscale" ${LIBS})
 else()
     target_link_libraries(LabFontDemo PRIVATE
-        "-lstdc++" ${LIBS} sokol::sokol Zep::Zep)
+        "-lstdc++" ${LIBS} ${LABFONT_PLATFORM_LIBS} Zep::Zep)
     #    "-lglfw" "-lavcodec" "-lavformat" "-lswscale" ${LIBS})
 endif()
 
