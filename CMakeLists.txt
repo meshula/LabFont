@@ -5,10 +5,15 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(LABFONT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
-option(LABFONT_SOKOL "Use Sokol as the renderer" ON)
+option(LABFONT_SOKOL "Use Sokol as the renderer" OFF)
+option(LABFONT_METAL "Use Metal as the renderer" ON)
 
 # Don't report that sample file installation up to date
 set(CMAKE_INSTALL_MESSAGE LAZY)
+
+if (LABFONT_SOKOL AND LABFONT_METAL)
+    message(FATAL "Cannot select Sokol and Metal simultaneously")
+endif()
 
 if (LABFONT_SOKOL)
     if(APPLE)
@@ -24,9 +29,19 @@ if (LABFONT_SOKOL)
     include(sokol.cmake)
 
     set(LABFONT_PLATFORM_SRC
+        src/main-sokol.cpp
         src/LabFontDemo-sokol.cpp)
 
     set(LABFONT_PLATFORM_LIBS sokol::sokol)
+
+    set(ST_GFX_DEFS LABFONT_HAVE_SOKOL)
+endif()
+
+if (LABFONT_METAL)
+    set(LABFONT_PLATFORM_SRC
+        src/main-metal.mm
+        src/mtlfontstash.h
+        src/LabFontDemo-metal.mm)
 endif()
 
 set(SRC
@@ -38,7 +53,6 @@ set(SRC
     src/LabFont.cpp
     src/lab_zep.cpp
     src/lab_microui.cpp
-    src/main.cpp
     src/microui.c
     src/microui.h
     src/microui_demo.cpp
@@ -68,9 +82,11 @@ add_subdirectory(third/zep)
 add_executable(LabFontDemo MACOSX_BUNDLE ${SRC} ${PLATFORM_SRC})
 
 if (APPLE)
-  #  list(APPEND LIBS
-  #      "-framework OpenGL"
-  #  )
+    list(APPEND LIBS
+        "-framework Cocoa"
+        "-framework Metal"
+        "-framework QuartzCore"
+    )
 
     configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/resources/MacBundleInfo.plist.in
@@ -102,6 +118,7 @@ endif()
 
 target_include_directories(LabFontDemo PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
+    src
     third
     third/rapidjson/include
     third/zep/include)

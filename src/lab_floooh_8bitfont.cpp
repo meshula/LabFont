@@ -1,6 +1,9 @@
 
 
+#ifdef LABFONT_HAVE_SOKOL
 #include "../LabSokol.h"
+#endif
+
 #include <cmath>
 #include <cstdint>
 
@@ -127,6 +130,8 @@ static const uint32_t pal_1[8] = {
     0x00FF88FF,     // violet
 };
 
+#ifdef LABFONT_HAVE_SOKOL
+
 extern "C"
 void draw_wobble_string(const char* str, 
     float posx, float posy, 
@@ -200,4 +205,6 @@ void draw_atari_string(const char* str,
     }
     sgl_end();
 }
+
+#endif
 

@@ -1,6 +1,10 @@
 
 #include "../LabZep.h"
+
+#ifdef LABFONT_HAVE_SOKOL
 #include "../LabSokol.h"
+#endif
+
 #include "../LabFont.h"
 
 #include <zep/display.h>
@@ -73,15 +77,21 @@ namespace
 
         void ApplyClip() const
         {
+#ifdef LABFONT_HAVE_SOKOL
             sgl_scissor_rect((int)_clipRect.topLeftPx.x, (int)_clipRect.topLeftPx.y,
                 (int)_clipRect.bottomRightPx.x - (int)_clipRect.topLeftPx.x,
                 (int)_clipRect.bottomRightPx.y - (int)_clipRect.topLeftPx.y, true);
+#endif
+            
         }
         void RestoreClip() const
         {
+#ifdef LABFONT_HAVE_SOKOL
             sgl_scissor_rect((int)_restoreClipRect.topLeftPx.x, (int)_restoreClipRect.topLeftPx.y,
                 (int)_restoreClipRect.bottomRightPx.x - (int)_restoreClipRect.topLeftPx.x,
                 (int)_restoreClipRect.bottomRightPx.y - (int)_restoreClipRect.topLeftPx.y, true);
+#endif
+            
         }
 
         void DrawChars(ZepFont& zfont, const NVec2f& pos, const NVec4f& color, const uint8_t* text_begin, const uint8_t* text_end) const override
@@ -110,11 +120,13 @@ namespace
             if (need_clip)
                 ApplyClip();
 
+#ifdef LABFONT_HAVE_SOKOL
             sgl_begin_lines();
             sgl_v2f_c4f(start.x, start.y, color.x, color.y, color.z, color.w);
             sgl_v2f_c4f(end.x, end.y, color.x, color.y, color.z, color.w);
             sgl_end();
-
+#endif
+            
             if (need_clip)
                 RestoreClip();
         }
@@ -126,13 +138,15 @@ namespace
             if (need_clip)
                 ApplyClip();
 
+#ifdef LABFONT_HAVE_SOKOL
             sgl_begin_quads();
             sgl_v2f_c4f(rc.topLeftPx.x, rc.topLeftPx.y, color.x, color.y, color.z, color.w);
             sgl_v2f_c4f(rc.bottomRightPx.x, rc.topLeftPx.y, color.x, color.y, color.z, color.w);
             sgl_v2f_c4f(rc.bottomRightPx.x, rc.bottomRightPx.y, color.x, color.y, color.z, color.w);
             sgl_v2f_c4f(rc.topLeftPx.x, rc.bottomRightPx.y, color.x, color.y, color.z, color.w);
             sgl_end();
-
+#endif
+            
             if (need_clip)
                 RestoreClip();
         }
@@ -566,6 +580,7 @@ static struct {
 
 static uint32_t sappZepKey(int c)
 {
+#ifdef LABFONT_HAVE_SOKOL
     switch (c)
     {
     case SAPP_KEYCODE_TAB: return Zep::ExtKeys::TAB;
@@ -595,6 +610,9 @@ static uint32_t sappZepKey(int c)
     case SAPP_KEYCODE_F12: return Zep::ExtKeys::F12;
     default: return c;
     }
+#else
+    return c;
+#endif
 }
 
 

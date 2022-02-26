@@ -1,7 +1,10 @@
 
 #include "../LabMicroUI.h"
 
+#ifdef LABFONT_HAVE_SOKOL
 #include "../LabSokol.h"
+#endif
+
 #include "microui.h"
 #include "../LabZep.h"
 
@@ -32,8 +35,10 @@ extern "C" void r_set_clip_rect(mu_Rect rect);
 #endif
 
 /*== micrui renderer =========================================================*/
+#ifdef LABFONT_HAVE_SOKOL
 static sg_image atlas_img;
 static sgl_pipeline pip;
+#endif
 LabFontState* font = nullptr;
 static LabFontSize font_size;
 
@@ -84,43 +89,33 @@ void r_init(LabFontState * font_) {
 
 extern "C"
 void r_begin(int disp_width, int disp_height) {
-#if 1
+#ifdef LABFONT_HAVE_SOKOL
     sgl_defaults();
     sgl_matrix_mode_projection();
     sgl_push_matrix();
     sgl_ortho(0.0f, (float)disp_width, (float)disp_height, 0.0f, -1.0f, +1.0f);
 #else
-    sgl_defaults();
-    sgl_push_pipeline();
-    sgl_load_pipeline(pip);
-    sgl_enable_texture();
-    sgl_texture(atlas_img);
-    sgl_matrix_mode_projection();
-    sgl_push_matrix();
-    sgl_ortho(0.0f, (float)disp_width, (float)disp_height, 0.0f, -1.0f, +1.0f);
-    sgl_begin_quads();
 #endif
 }
 
 extern "C"
 void r_end(void) {
-#if 1
+#ifdef LABFONT_HAVE_SOKOL
     sgl_pop_matrix();
 #else
-    sgl_end();
-    sgl_pop_matrix();
-    sgl_pop_pipeline();
 #endif
 }
 
 extern "C"
 void r_draw(void) {
+#ifdef LABFONT_HAVE_SOKOL
     sgl_draw();
+#endif
 }
 
 extern "C"
 void r_push_quad(mu_Rect dst, mu_Rect src, mu_Color color) {
-#if 1
+#ifdef LABFONT_HAVE_SOKOL
     float x0 = (float)dst.x;
     float y0 = (float)dst.y;
     float x1 = (float)(dst.x + dst.w);
@@ -134,21 +129,6 @@ void r_push_quad(mu_Rect dst, mu_Rect src, mu_Color color) {
     sgl_v2f(x0, y1);
     sgl_end();
 #else
-    float u0 = (float)src.x / (float)ATLAS_WIDTH;
-    float v0 = (float)src.y / (float)ATLAS_HEIGHT;
-    float u1 = (float)(src.x + src.w) / (float)ATLAS_WIDTH;
-    float v1 = (float)(src.y + src.h) / (float)ATLAS_HEIGHT;
-
-    float x0 = (float)dst.x;
-    float y0 = (float)dst.y;
-    float x1 = (float)(dst.x + dst.w);
-    float y1 = (float)(dst.y + dst.h);
-
-    sgl_c4b(color.r, color.g, color.b, color.a);
-    sgl_v2f_t2f(x0, y0, u0, v0);
-    sgl_v2f_t2f(x1, y0, u1, v0);
-    sgl_v2f_t2f(x1, y1, u1, v1);
-    sgl_v2f_t2f(x0, y1, u0, v1);
 #endif
 }
 
@@ -208,7 +188,7 @@ int r_get_text_width(const char* text, int len) {
 
 extern "C"
 void r_draw_icon(int id, mu_Rect rect, mu_Color color) {
-#if 1
+#ifdef LABFONT_HAVE_SOKOL
     float w2 = rect.w * 0.5f;
     float h2 = rect.h * 0.5f;
     float x = rect.x + w2 * 0.5f;
@@ -261,10 +241,6 @@ void r_draw_icon(int id, mu_Rect rect, mu_Color color) {
         break;
     }
 #else
-    mu_Rect src = atlas[id];
-    int x = rect.x + (rect.w - src.w) / 2;
-    int y = rect.y + (rect.h - src.h) / 2;
-    r_push_quad(mu_rect(x, y, src.w, src.h), src, color);
 #endif
 }
 
@@ -276,14 +252,12 @@ int r_get_text_height(void) {
 
 extern "C"
 void r_set_clip_rect(mu_Rect rect) {
-#if 1
+#ifdef LABFONT_HAVE_SOKOL
     sgl_scissor_rect(rect.x, rect.y, rect.w, rect.h, true);
 #else
-    sgl_end();
-    sgl_scissor_rect(rect.x, rect.y, rect.w, rect.h, true);
-    sgl_begin_quads();
 #endif
 }
+
 
 static int text_width_cb(mu_Font font, const char* text, int len) {
     (void)font;
@@ -329,6 +303,7 @@ extern "C" void lab_microui_render(int w, int h, LabZep* zep)
     r_end();
 }
 
+#ifdef LABFONT_HAVE_SOKOL
 
 const int key_map(int c)
 {
@@ -361,3 +336,4 @@ extern "C" void lab_microui_input_sokol_text(int c)
     mu_input_text(&ctx, txt);
 }
 
+#endif

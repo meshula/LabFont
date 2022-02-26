@@ -1,7 +1,6 @@
-﻿
+
 // nb: This file is encoded in utf-8.
 
-#include "../LabSokol.h"
 #include <string>
 #include <array>
 #include <map>

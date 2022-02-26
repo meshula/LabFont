@@ -47,7 +47,7 @@ const char* lab_application_executable_path(const char * argv0)
     if (!buf[0]) {
         uint32_t size = sizeof(buf);
         int ret = _NSGetExecutablePath(buf, &size);
-        if (0 == ret)
+        if (0 == ret && argv0)
             strncpy(buf, argv0, sizeof(buf));
     }
     return buf;

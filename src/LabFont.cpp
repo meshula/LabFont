@@ -1,10 +1,14 @@
 
 
 #include "../LabFont.h"
-#include "../LabSokol.h"
 
 #include "fontstash.h"
+
+#ifdef LABFONT_HAVE_SOKOL
+#include "../LabSokol.h"
 #include "sokol_fontstash.h"
+#endif
+
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -32,7 +36,9 @@ struct LabFont
 {
     int id;           // >= zero for a TTF
 
+#ifdef LABFONT_HAVE_SOKOL
     sg_image img;     // non-zero for a QuadPlay texture
+#endif
     int img_w, img_h; // non-zero for a QuadPlay texture
     int baseline;
     int charsz_x, charsz_y;
@@ -82,9 +88,13 @@ namespace LabFontInternal {
 
     FONScontext* fontStash()
     {
+#ifdef LABFONT_HAVE_SOKOL
         const int atlas_dim = 1024;
         static FONScontext* fons_context = sfons_create(atlas_dim, atlas_dim, FONS_ZERO_TOPLEFT);
         return fons_context;
+#else
+        return nullptr;
+#endif
     }
 
     constexpr uint32_t fons_rgba(const LabFontColor& c)
@@ -165,7 +175,9 @@ struct LabFontState* LabFontStateBake_bind(struct LabFont* font,
     return LabFontStateBake(font, size, *color, *alignment, spacing, blur);
 }
 
+#ifdef LABFONT_HAVE_SOKOL
 sg_image debug_texture;
+#endif
 static std::array<int, 256> qp_font_map;
 std::array<int, 256> build_quadplay_font_map();
 
@@ -275,6 +287,7 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                 int addr = i * 4;
                 data[addr + 3] = data[addr] == 0 ? 0 : 255;
             }
+#ifdef LABFONT_HAVE_SOKOL
             sg_image_desc img_desc;
             memset(&img_desc, 0, sizeof(img_desc));
             img_desc.width = x;
@@ -293,7 +306,8 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                 stbi_image_free(data);
                 return nullptr;
             }
-
+#endif
+            
             r->img_w = x;
             r->img_h = y;
             r->charsz_x = x / 32;
@@ -352,6 +366,7 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
         }
     }
     else if (type.type == LabFontTypeSokol8x8) {
+#ifdef LABFONT_HAVE_SOKOL
         using namespace lf_internal;
         static bool pack = true;
         static uint8_t* texture = nullptr;
@@ -380,7 +395,8 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
             img_desc.data.subimage[0][0].size = sz;
             font_img = sg_make_image(&img_desc);
         }
-        
+#endif
+
         LabFont* r = (LabFont*)calloc(1, sizeof(LabFont));
         if (!r)
         {
@@ -388,7 +404,9 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
         }
 
         r->id = -2;
+#ifdef LABFONT_HAVE_SOKOL
         r->img = font_img;
+#endif
         r->img_w = 2048;
         r->baseline = 7;
         r->charsz_x = 8;
@@ -430,6 +448,7 @@ LabFont* LabFontGet(const char* name)
     return it->second.get();
 }
 
+#ifdef LABFONT_HAVE_SOKOL
 static bool qp_must_init = true;
 static sgl_pipeline qp_pip;
 
@@ -586,6 +605,7 @@ static float quadplay_font_draw(const char* str, const char* end,
     sgl_disable_texture();
     return x + kern + (idx * px);
 }
+#endif
 
 float LabFontDraw(const char* str, float x, float y, LabFontState* fs)
 {
@@ -597,6 +617,8 @@ float LabFontDraw(const char* str, float x, float y, LabFontState* fs)
         FONScontext* fc = LabFontInternal::fontStash();
         return fonsDrawText(fc, x, y, str, NULL);
     }
+    
+#ifdef LABFONT_HAVE_SOKOL
     else if (fs->font->img.id > 0) {
         if (fs->font->id == -1) {
             LabFontColor c = { 255,255,255,255 };
@@ -607,6 +629,7 @@ float LabFontDraw(const char* str, float x, float y, LabFontState* fs)
             return sokol_8x8_draw(str, nullptr, &c, x, y, fs);
         }
     }
+#endif
     return x;
 }
 
@@ -626,9 +649,11 @@ float LabFontDrawSubstringColor(const char* str, const char* end, LabFontColor* 
         fonsSetColor(fc, LabFontInternal::fons_rgba(*c));
         return fonsDrawText(fc, x, y, str, end);
     }
+#ifdef LABFONT_HAVE_SOKOL
     else if (fs->font->img.id > 0) {
         quadplay_font_draw(str, end, c, x, y, fs);
     }
+#endif
     return x;
 }
 
@@ -652,6 +677,7 @@ LabFontSize LabFontMeasureSubstring(const char* str, const char* end, LabFontSta
         fonsVertMetrics(fc, &sz.ascender, &sz.descender, &sz.height);
         return sz;
     }
+#ifdef LABFONT_HAVE_SOKOL
     else if (fs->font->img.id > 0) {
         if (fs->font->id == -1) {
             LabFontSize sz;
@@ -703,14 +729,16 @@ LabFontSize LabFontMeasureSubstring(const char* str, const char* end, LabFontSta
         }
   
     }
+#endif
     return { 0, 0, 0, 0 };
 }
 
-
 void LabFontCommitTexture()
 {
+#ifdef LABFONT_HAVE_SOKOL
     // flush fontstash's font atlas to sokol-gfx texture
     sfons_flush(LabFontInternal::fontStash());
+#endif
 }
 
 
