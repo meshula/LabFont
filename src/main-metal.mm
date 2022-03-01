@@ -8,10 +8,7 @@
 
 #include <stddef.h>
 
-#define FONTSTASH_IMPLEMENTATION
 #include "fontstash.h"
-
-#define MTLFONTSTASH_IMPLEMENTATION
 #include "mtlfontstash.h"
 
 #import <Cocoa/Cocoa.h>
@@ -23,7 +20,8 @@
 
 extern "C" void add_quit_menu();
 
-void fontDemo(float& dx, float& dy, float sx, float sy);
+void fontDemo(LabFontDrawState* ds, float& dx, float& dy, float sx, float sy);
+void font_demo_init(const char* path_);
 
 
 unsigned int packRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a) {
@@ -94,66 +92,85 @@ std::string g_app_path;
     self.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
     self.layer = [self makeBackingLayer];
 
-    fs = mtlfonsCreate(self.device, 1024, 512, FONS_ZERO_TOPLEFT);
-    if (fs == NULL) {
-        printf("Could not create stash.\n");
-    }
+    LabFontInitMetal(self.device, self.colorPixelFormat);
 
     std::string rsrc = lab_application_resource_path(g_app_path.c_str(),
-                "share/lab_font_demo");
-    
-    FILE* ffile;
-    size_t sz;
-    uint8_t* fdata;
-    ffile = fopen((rsrc + "/DroidSerif-Regular.ttf").c_str(), "rb");
-    fseek(ffile, 0, SEEK_END);
-    sz = ftell(ffile);
-    fseek(ffile, 0, SEEK_SET);
-    fdata = (uint8_t*) malloc(sz);
-    fread(fdata, sz, 1, ffile);
-    fclose(ffile);
-    fontNormal = fonsAddFontMem(fs, "sans", fdata, sz, 1);
-    if (fontNormal == FONS_INVALID) {
-        printf("Could not add font normal.\n");
-    }
-    
-    ffile = fopen((rsrc + "/DroidSerif-Italic.ttf").c_str(), "rb");
-    fseek(ffile, 0, SEEK_END);
-    sz = ftell(ffile);
-    fseek(ffile, 0, SEEK_SET);
-    fdata = (uint8_t*) malloc(sz);
-    fread(fdata, sz, 1, ffile);
-    fclose(ffile);
-    fontItalic = fonsAddFontMem(fs, "sans-italic", fdata, sz, 1);
-    if (fontItalic == FONS_INVALID) {
-        printf("Could not add font italic.\n");
-    }
-    
-    ffile = fopen((rsrc + "/DroidSerif-Bold.ttf").c_str(), "rb");
-    fseek(ffile, 0, SEEK_END);
-    sz = ftell(ffile);
-    fseek(ffile, 0, SEEK_SET);
-    fdata = (uint8_t*) malloc(sz);
-    fread(fdata, sz, 1, ffile);
-    fclose(ffile);
-    fontBold = fonsAddFontMem(fs, "sans-bold", fdata, sz, 1);
-    if (fontBold == FONS_INVALID) {
-        printf("Could not add font bold.\n");
-    }
+                                                     "share/lab_font_demo");
 
-    ffile = fopen((rsrc + "/DroidSansJapanese.ttf").c_str(), "rb");
-    fseek(ffile, 0, SEEK_END);
-    sz = ftell(ffile);
-    fseek(ffile, 0, SEEK_SET);
-    fdata = (uint8_t*) malloc(sz);
-    fread(fdata, sz, 1, ffile);
-    fclose(ffile);
-    fontJapanese = fonsAddFontMem(fs, "sans-jp", fdata, sz, 1);
-    if (fontJapanese == FONS_INVALID) {
-        printf("Could not add font japanese.\n");
-    }
+    font_demo_init(rsrc.c_str());
+    if (false) {
+        /*            __  */
+        /*  _ __ ___ / _| */
+        /* | '__/ _ \ |_  */
+        /* | | |  __/  _| */
+        /* |_|  \___|_|   */
 
-    mtlfonsSetRenderTargetPixelFormat(fs, self.colorPixelFormat);
+        fs = mtlfonsCreate(self.device, 1024, 512, FONS_ZERO_TOPLEFT);
+        if (fs == NULL) {
+            printf("Could not create stash.\n");
+        }
+
+
+        FILE* ffile;
+        size_t sz;
+        uint8_t* fdata;
+        ffile = fopen((rsrc + "/DroidSerif-Regular.ttf").c_str(), "rb");
+        fseek(ffile, 0, SEEK_END);
+        sz = ftell(ffile);
+        fseek(ffile, 0, SEEK_SET);
+        fdata = (uint8_t*) malloc(sz);
+        fread(fdata, sz, 1, ffile);
+        fclose(ffile);
+        fontNormal = fonsAddFontMem(fs, "sans", fdata, sz, 1);
+        if (fontNormal == FONS_INVALID) {
+            printf("Could not add font normal.\n");
+        }
+
+        ffile = fopen((rsrc + "/DroidSerif-Italic.ttf").c_str(), "rb");
+        fseek(ffile, 0, SEEK_END);
+        sz = ftell(ffile);
+        fseek(ffile, 0, SEEK_SET);
+        fdata = (uint8_t*) malloc(sz);
+        fread(fdata, sz, 1, ffile);
+        fclose(ffile);
+        fontItalic = fonsAddFontMem(fs, "sans-italic", fdata, sz, 1);
+        if (fontItalic == FONS_INVALID) {
+            printf("Could not add font italic.\n");
+        }
+
+        ffile = fopen((rsrc + "/DroidSerif-Bold.ttf").c_str(), "rb");
+        fseek(ffile, 0, SEEK_END);
+        sz = ftell(ffile);
+        fseek(ffile, 0, SEEK_SET);
+        fdata = (uint8_t*) malloc(sz);
+        fread(fdata, sz, 1, ffile);
+        fclose(ffile);
+        fontBold = fonsAddFontMem(fs, "sans-bold", fdata, sz, 1);
+        if (fontBold == FONS_INVALID) {
+            printf("Could not add font bold.\n");
+        }
+
+        ffile = fopen((rsrc + "/DroidSansJapanese.ttf").c_str(), "rb");
+        fseek(ffile, 0, SEEK_END);
+        sz = ftell(ffile);
+        fseek(ffile, 0, SEEK_SET);
+        fdata = (uint8_t*) malloc(sz);
+        fread(fdata, sz, 1, ffile);
+        fclose(ffile);
+        fontJapanese = fonsAddFontMem(fs, "sans-jp", fdata, sz, 1);
+        if (fontJapanese == FONS_INVALID) {
+            printf("Could not add font japanese.\n");
+        }
+
+        mtlfonsSetRenderTargetPixelFormat(fs, self.colorPixelFormat);
+
+
+        /*            __  */
+        /*  _ __ ___ / _| */
+        /* | '__/ _ \ |_  */
+        /* | | |  __/  _| */
+        /* |_|  \___|_|   */
+    }
 }
 
 - (void)viewDidMoveToWindow {
@@ -200,136 +217,159 @@ std::string g_app_path;
     CGSize drawableSize = self.metalLayer.drawableSize;
     int width = drawableSize.width, height = drawableSize.height;
 
-    MTLViewport viewport = {
-        .originX = 0, .originY = 0,
-        .height = static_cast<double>(height), .width = static_cast<double>(width) };
-    mtlfonsSetRenderCommandEncoder(fs, renderCommandEncoder, viewport);
+    LabFontDrawBeginMetal(renderCommandEncoder);
+    auto ds = LabFontDrawBegin(0, 0, width, height);
 
-    unsigned int white = mtlfonsRGBA(255,255,255,255);
-    unsigned int brown = mtlfonsRGBA(192,128,0,128);
-    unsigned int blue = mtlfonsRGBA(0,192,255,255);
-    unsigned int black = mtlfonsRGBA(0,0,0,255);
+    float dx = 0;
+    float dy = 50;
+    float sx = 150;
+    float sy = 150;
+    fontDemo(ds, dx, dy, sx, sy);
 
-    float sx, sy, dx, dy, lh = 0;
-    sx = 50; sy = 50;
-    dx = sx; dy = sy;
+    if (false) {
+        /*            __  */
+        /*  _ __ ___ / _| */
+        /* | '__/ _ \ |_  */
+        /* | | |  __/  _| */
+        /* |_|  \___|_|   */
 
-    dash(fs, dx,dy);
+        MTLViewport viewport = {
+            .originX = 0, .originY = 0,
+            .height = static_cast<double>(height), .width = static_cast<double>(width) };
+        mtlfonsSetRenderCommandEncoder(fs, renderCommandEncoder, viewport);
 
-    fonsClearState(fs);
+        unsigned int white = mtlfonsRGBA(255,255,255,255);
+        unsigned int brown = mtlfonsRGBA(192,128,0,128);
+        unsigned int blue = mtlfonsRGBA(0,192,255,255);
+        unsigned int black = mtlfonsRGBA(0,0,0,255);
 
-    float scale = fmax(1, self.window.backingScaleFactor);
+        float lh = 0;
+        sx = 50; sy = 50;
+        dx = sx; dy = sy;
 
-    fonsSetSize(fs, scale * 124.0f);
-    fonsSetFont(fs, fontNormal);
-    fonsVertMetrics(fs, NULL, NULL, &lh);
-    dx = sx;
-    dy += lh;
-    dash(fs, dx,dy);
+        dash(fs, dx,dy);
 
-    fonsSetSize(fs, scale * 124.0f);
-    fonsSetFont(fs, fontNormal);
-    fonsSetColor(fs, white);
-    dx = fonsDrawText(fs, dx,dy,"The quick ",NULL);
+        fonsClearState(fs);
 
-    fonsSetSize(fs, scale * 48.0f);
-    fonsSetFont(fs, fontItalic);
-    fonsSetColor(fs, brown);
-    dx = fonsDrawText(fs, dx,dy,"brown ",NULL);
+        float scale = fmax(1, self.window.backingScaleFactor);
 
-    fonsSetSize(fs, scale * 24.0f);
-    fonsSetFont(fs, fontNormal);
-    fonsSetColor(fs, white);
-    dx = fonsDrawText(fs, dx,dy,"fox ",NULL);
+        fonsSetSize(fs, scale * 124.0f);
+        fonsSetFont(fs, fontNormal);
+        fonsVertMetrics(fs, NULL, NULL, &lh);
+        dx = sx;
+        dy += lh;
+        dash(fs, dx,dy);
 
-    fonsVertMetrics(fs, NULL, NULL, &lh);
-    dx = sx;
-    dy += lh*1.2f;
-    dash(fs, dx,dy);
-    fonsSetFont(fs, fontItalic);
-    dx = fonsDrawText(fs, dx,dy,"jumps over ",NULL);
-    fonsSetFont(fs, fontBold);
-    dx = fonsDrawText(fs, dx,dy,"the lazy ",NULL);
-    fonsSetFont(fs, fontNormal);
-    dx = fonsDrawText(fs, dx,dy,"dog.",NULL);
+        fonsSetSize(fs, scale * 124.0f);
+        fonsSetFont(fs, fontNormal);
+        fonsSetColor(fs, white);
+        dx = fonsDrawText(fs, dx,dy,"The quick ",NULL);
 
-    dx = sx;
-    dy += lh*1.2f;
-    dash(fs, dx,dy);
-    fonsSetSize(fs, scale * 12.0f);
-    fonsSetFont(fs, fontNormal);
-    fonsSetColor(fs, blue);
-    fonsDrawText(fs, dx,dy,"Now is the time for all good men to come to the aid of the party.",NULL);
+        fonsSetSize(fs, scale * 48.0f);
+        fonsSetFont(fs, fontItalic);
+        fonsSetColor(fs, brown);
+        dx = fonsDrawText(fs, dx,dy,"brown ",NULL);
 
-    fonsVertMetrics(fs, NULL,NULL,&lh);
-    dx = sx;
-    dy += lh*1.2f*2;
-    dash(fs, dx,dy);
-    fonsSetSize(fs, scale * 18.0f);
-    fonsSetFont(fs, fontItalic);
-    fonsSetColor(fs, white);
-    fonsDrawText(fs, dx,dy,"Ég get etið gler án þess að meiða mig.",NULL);
+        fonsSetSize(fs, scale * 24.0f);
+        fonsSetFont(fs, fontNormal);
+        fonsSetColor(fs, white);
+        dx = fonsDrawText(fs, dx,dy,"fox ",NULL);
 
-    fonsVertMetrics(fs, NULL,NULL,&lh);
-    dx = sx;
-    dy += lh*1.2f;
-    dash(fs, dx,dy);
-    fonsSetFont(fs, fontJapanese);
-    fonsDrawText(fs, dx,dy,"私はガラスを食べられます。それは私を傷つけません。",NULL);
+        fonsVertMetrics(fs, NULL, NULL, &lh);
+        dx = sx;
+        dy += lh*1.2f;
+        dash(fs, dx,dy);
+        fonsSetFont(fs, fontItalic);
+        dx = fonsDrawText(fs, dx,dy,"jumps over ",NULL);
+        fonsSetFont(fs, fontBold);
+        dx = fonsDrawText(fs, dx,dy,"the lazy ",NULL);
+        fonsSetFont(fs, fontNormal);
+        dx = fonsDrawText(fs, dx,dy,"dog.",NULL);
 
-    // Font alignment
-    fonsSetSize(fs, scale * 18.0f);
-    fonsSetFont(fs, fontNormal);
-    fonsSetColor(fs, white);
+        dx = sx;
+        dy += lh*1.2f;
+        dash(fs, dx,dy);
+        fonsSetSize(fs, scale * 12.0f);
+        fonsSetFont(fs, fontNormal);
+        fonsSetColor(fs, blue);
+        fonsDrawText(fs, dx,dy,"Now is the time for all good men to come to the aid of the party.",NULL);
 
-    dx = scale * 50; dy = scale * 350;
-    line(fs, dx-10,dy,dx+scale * 250,dy);
-    fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_TOP);
-    dx = fonsDrawText(fs, dx,dy,"Top",NULL);
-    dx += scale * 10;
-    fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_MIDDLE);
-    dx = fonsDrawText(fs, dx,dy,"Middle",NULL);
-    dx += scale * 10;
-    fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
-    dx = fonsDrawText(fs, dx,dy,"Baseline",NULL);
-    dx += scale * 10;
-    fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BOTTOM);
-    fonsDrawText(fs, dx,dy,"Bottom",NULL);
+        fonsVertMetrics(fs, NULL,NULL,&lh);
+        dx = sx;
+        dy += lh*1.2f*2;
+        dash(fs, dx,dy);
+        fonsSetSize(fs, scale * 18.0f);
+        fonsSetFont(fs, fontItalic);
+        fonsSetColor(fs, white);
+        fonsDrawText(fs, dx,dy,"Ég get etið gler án þess að meiða mig.",NULL);
 
-    dx = scale * 150; dy = scale * 400;
-    line(fs, dx,dy-scale * 30,dx,dy+scale * 80.0f);
-    fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
-    fonsDrawText(fs, dx,dy,"Left",NULL);
-    dy += scale * 30;
-    fonsSetAlign(fs, FONS_ALIGN_CENTER | FONS_ALIGN_BASELINE);
-    fonsDrawText(fs, dx,dy,"Center",NULL);
-    dy += scale * 30;
-    fonsSetAlign(fs, FONS_ALIGN_RIGHT | FONS_ALIGN_BASELINE);
-    fonsDrawText(fs, dx,dy,"Right",NULL);
+        fonsVertMetrics(fs, NULL,NULL,&lh);
+        dx = sx;
+        dy += lh*1.2f;
+        dash(fs, dx,dy);
+        fonsSetFont(fs, fontJapanese);
+        fonsDrawText(fs, dx,dy,"いろはにほへと ちりぬるを わかよたれそ つねならむ うゐのおくやま けふこえて あさきゆめみし ゑひもせす　京（ん）",NULL);
 
-    // Blur
-    dx = scale * 500; dy = scale * 350;
-    fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
+        // Font alignment
+        fonsSetSize(fs, scale * 18.0f);
+        fonsSetFont(fs, fontNormal);
+        fonsSetColor(fs, white);
 
-    fonsSetSize(fs, scale * 60.0f);
-    fonsSetFont(fs, fontItalic);
-    fonsSetColor(fs, white);
-    fonsSetSpacing(fs, scale * 5.0f);
-    fonsSetBlur(fs, scale * 10.0f);
-    fonsDrawText(fs, dx,dy,"Blurry...",NULL);
+        dx = scale * 50; dy = scale * 350;
+        line(fs, dx-10,dy,dx+scale * 250,dy);
+        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_TOP);
+        dx = fonsDrawText(fs, dx,dy,"Top",NULL);
+        dx += scale * 10;
+        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_MIDDLE);
+        dx = fonsDrawText(fs, dx,dy,"Middle",NULL);
+        dx += scale * 10;
+        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
+        dx = fonsDrawText(fs, dx,dy,"Baseline",NULL);
+        dx += scale * 10;
+        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BOTTOM);
+        fonsDrawText(fs, dx,dy,"Bottom",NULL);
 
-    dy += scale * 50.0f;
+        dx = scale * 150; dy = scale * 400;
+        line(fs, dx,dy-scale * 30,dx,dy+scale * 80.0f);
+        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
+        fonsDrawText(fs, dx,dy,"Left",NULL);
+        dy += scale * 30;
+        fonsSetAlign(fs, FONS_ALIGN_CENTER | FONS_ALIGN_BASELINE);
+        fonsDrawText(fs, dx,dy,"Center",NULL);
+        dy += scale * 30;
+        fonsSetAlign(fs, FONS_ALIGN_RIGHT | FONS_ALIGN_BASELINE);
+        fonsDrawText(fs, dx,dy,"Right",NULL);
 
-    fonsSetSize(fs, scale * 18.0f);
-    fonsSetFont(fs, fontBold);
-    fonsSetColor(fs, black);
-    fonsSetSpacing(fs, 0.0f);
-    fonsSetBlur(fs, scale * 3.0f);
-    fonsDrawText(fs, dx,dy+(scale * 2),"DROP THAT SHADOW",NULL);
+        // Blur
+        dx = scale * 500; dy = scale * 350;
+        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
 
-    fonsSetColor(fs, white);
-    fonsSetBlur(fs, 0);
-    fonsDrawText(fs, dx,dy,"DROP THAT SHADOW",NULL);
+        fonsSetSize(fs, scale * 60.0f);
+        fonsSetFont(fs, fontItalic);
+        fonsSetColor(fs, white);
+        fonsSetSpacing(fs, scale * 5.0f);
+        fonsSetBlur(fs, scale * 10.0f);
+        fonsDrawText(fs, dx,dy,"Blurry...",NULL);
+
+        dy += scale * 50.0f;
+
+        fonsSetSize(fs, scale * 18.0f);
+        fonsSetFont(fs, fontBold);
+        fonsSetColor(fs, black);
+        fonsSetSpacing(fs, 0.0f);
+        fonsSetBlur(fs, scale * 3.0f);
+        fonsDrawText(fs, dx,dy+(scale * 2),"DROP THAT SHADOW",NULL);
+
+        fonsSetColor(fs, white);
+        fonsSetBlur(fs, 0);
+        fonsDrawText(fs, dx,dy,"DROP THAT SHADOW",NULL);
+    }
+
+/*            __  */
+/*  _ __ ___ / _| */
+/* | '__/ _ \ |_  */
+/* | | |  __/  _| */
+/* |_|  \___|_|   */
 
     [renderCommandEncoder endEncoding];
     [commandBuffer presentDrawable:drawable];
@@ -358,7 +398,6 @@ std::string g_app_path;
     NSApp.mainMenu = menu_bar;
     NSMenu* app_menu = [[NSMenu alloc] init];
     NSString* window_title_as_nsstring = [[NSProcessInfo processInfo] processName];
-    // `quit_title` memory will be owned by the NSMenuItem, so no need to release it ourselves
     NSString* quit_title =  [@"Quit " stringByAppendingString:window_title_as_nsstring];
     NSMenuItem* quit_menu_item = [[NSMenuItem alloc]
         initWithTitle:quit_title
@@ -634,8 +673,10 @@ void frame(void) {
         sgl_end();
     }
 
+    LabFontDrawState* ds = LabFontDrawBegin((void*) command_encoder);
+    
     if (true) {
-        fontDemo(dx, dy, sx, sy);
+        fontDemo(ds, dx, dy, sx, sy);
     }
 
     //---- sgl UI layer
@@ -651,7 +692,7 @@ void frame(void) {
         lab_microui_render(sapp_width(), sapp_height(), zep);
     }
 
-    LabFontCommitTexture();
+    LabFontDrawEnd(ds);
 
     // begin sokol GL rendering with a clear pass
     sg_pass_action pass_action;

@@ -19,18 +19,18 @@ if (LABFONT_SOKOL)
     if(APPLE)
         set(ST_GFX_DEFS
             SOKOL_METAL
-            )
+        )
     else()
         set(ST_GFX_DEFS
             SOKOL_D3D11
-            )
+        )
     endif()
 
     include(sokol.cmake)
 
     set(LABFONT_PLATFORM_SRC
-        src/main-sokol.cpp
-        src/LabFontDemo-sokol.cpp)
+        src/LabFont-sokol.cpp
+        src/main-sokol.cpp)
 
     set(LABFONT_PLATFORM_LIBS sokol::sokol)
 
@@ -40,8 +40,9 @@ endif()
 if (LABFONT_METAL)
     set(LABFONT_PLATFORM_SRC
         src/main-metal.mm
-        src/mtlfontstash.h
-        src/LabFontDemo-metal.mm)
+        src/LabFont-metal.mm
+        src/mtlfontstash.h)
+    set(ST_GFX_DEFS LABFONT_HAVE_METAL)
 endif()
 
 set(SRC
@@ -50,7 +51,7 @@ set(SRC
     src/LabDirectories.cpp
     src/LabDirectories.h
     LabSokol.h
-    src/LabFont.cpp
+    src/LabFontDemo.cpp
     src/lab_zep.cpp
     src/lab_microui.cpp
     src/microui.c
@@ -80,6 +81,7 @@ set(BUILD_TESTS OFF)
 add_subdirectory(third/zep)
 
 add_executable(LabFontDemo MACOSX_BUNDLE ${SRC} ${PLATFORM_SRC})
+set_property(TARGET LabFontDemo PROPERTY CXX_STANDARD 17)
 
 if (APPLE)
     list(APPEND LIBS

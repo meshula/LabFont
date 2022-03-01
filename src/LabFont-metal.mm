@@ -1,14 +1,14 @@
 
+// LabFont, MIT license
 
 #include "../LabFont.h"
 
+#include <stddef.h>
+#define FONTSTASH_IMPLEMENTATION
 #include "fontstash.h"
 
-#ifdef LABFONT_HAVE_SOKOL
-#include "../LabSokol.h"
-#include "sokol_fontstash.h"
-#endif
-
+#define MTLFONTSTASH_IMPLEMENTATION
+#include "mtlfontstash.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -36,9 +36,6 @@ struct LabFont
 {
     int id;           // >= zero for a TTF
 
-#ifdef LABFONT_HAVE_SOKOL
-    sg_image img;     // non-zero for a QuadPlay texture
-#endif
     int img_w, img_h; // non-zero for a QuadPlay texture
     int baseline;
     int charsz_x, charsz_y;
@@ -57,6 +54,10 @@ struct LabFontState
 };
 
 namespace LabFontInternal {
+
+    id<MTLDevice> _device = nil;
+    id<MTLRenderCommandEncoder> _command_encoder = nil;
+    MTLPixelFormat _format;
 
     struct LoadResult { uint8_t* buff; size_t len; };
     LoadResult load(const char* path)
@@ -88,13 +89,18 @@ namespace LabFontInternal {
 
     FONScontext* fontStash()
     {
-#ifdef LABFONT_HAVE_SOKOL
+        static FONScontext* fs = nullptr;
+        if (fs != nullptr)
+            return fs;
+
+        if (!_device)
+            return nullptr;
+
         const int atlas_dim = 1024;
-        static FONScontext* fons_context = sfons_create(atlas_dim, atlas_dim, FONS_ZERO_TOPLEFT);
-        return fons_context;
-#else
-        return nullptr;
-#endif
+        fs = mtlfonsCreate(_device,
+                           atlas_dim, atlas_dim, FONS_ZERO_TOPLEFT);
+        mtlfonsSetRenderTargetPixelFormat(fs, LabFontInternal::_format);
+        return fs;
     }
 
     constexpr uint32_t fons_rgba(const LabFontColor& c)
@@ -128,14 +134,45 @@ namespace LabFontInternal {
     void fontstash_bind(LabFontState* fs)
     {
         FONScontext* fc = LabFontInternal::fontStash();
-        fonsSetFont(fc, fs->font->id);
-        fonsSetSize(fc, fs->size);
-        fonsSetColor(fc, LabFontInternal::fons_rgba(fs->color));
-        fonsSetAlign(fc, LabFontInternal::fons_align(fs->alignment));
+        fonsSetFont(fc,    fs->font->id);
+        fonsSetSize(fc,    fs->size);
+        fonsSetColor(fc,   LabFontInternal::fons_rgba(fs->color));
+        fonsSetAlign(fc,   LabFontInternal::fons_align(fs->alignment));
         fonsSetSpacing(fc, fs->spacing);
-        fonsSetBlur(fc, fs->blur);
+        fonsSetBlur(fc,    fs->blur);
     }
 
+}
+
+extern "C"
+void LabFontInitMetal(id<MTLDevice> device, MTLPixelFormat fmt) {
+    LabFontInternal::_device = device;
+    LabFontInternal::_format = fmt;
+}
+
+extern "C"
+void LabFontDrawBeginMetal(id<MTLRenderCommandEncoder> enc) {
+    LabFontInternal::_command_encoder = enc;
+}
+
+extern "C"
+LabFontDrawState* LabFontDrawBegin(float ox, float oy, float w, float h)
+{
+    MTLViewport viewport = {
+        .originX = ox, .originY = oy,
+        .height = h, .width = w
+    };
+    FONScontext* fc = LabFontInternal::fontStash();
+    mtlfonsSetRenderCommandEncoder(fc, 
+                LabFontInternal::_command_encoder, viewport);
+    fonsClearState(fc);
+    
+    return nullptr;
+}
+
+void LabFontDrawEnd(LabFontDrawState* st) {
+    LabFontInternal::_device = nil;
+    LabFontInternal::_command_encoder = nil;
 }
 
 extern "C"
@@ -175,9 +212,6 @@ struct LabFontState* LabFontStateBake_bind(struct LabFont* font,
     return LabFontStateBake(font, size, *color, *alignment, spacing, blur);
 }
 
-#ifdef LABFONT_HAVE_SOKOL
-sg_image debug_texture;
-#endif
 static std::array<int, 256> qp_font_map;
 std::array<int, 256> build_quadplay_font_map();
 
@@ -607,7 +641,7 @@ static float quadplay_font_draw(const char* str, const char* end,
 }
 #endif
 
-float LabFontDraw(const char* str, float x, float y, LabFontState* fs)
+float LabFontDraw(LabFontDrawState* ds, const char* str, float x, float y, LabFontState* fs)
 {
     if (!fs || !str)
         return x;
@@ -633,12 +667,13 @@ float LabFontDraw(const char* str, float x, float y, LabFontState* fs)
     return x;
 }
 
-float LabFontDrawColor(const char* str, LabFontColor* c, float x, float y, LabFontState* fs)
+float LabFontDrawColor(LabFontDrawState* ds,
+                       const char* str, LabFontColor* c, float x, float y, LabFontState* fs)
 {
-    return LabFontDrawSubstringColor(str, NULL, c, x, y, fs);
+    return LabFontDrawSubstringColor(ds, str, NULL, c, x, y, fs);
 }
 
-float LabFontDrawSubstringColor(const char* str, const char* end, LabFontColor* c, float x, float y, LabFontState* fs)
+float LabFontDrawSubstringColor(LabFontDrawState* ds, const char* str, const char* end, LabFontColor* c, float x, float y, LabFontState* fs)
 {
     if (!fs || !str)
         return x;
@@ -732,15 +767,6 @@ LabFontSize LabFontMeasureSubstring(const char* str, const char* end, LabFontSta
 #endif
     return { 0, 0, 0, 0 };
 }
-
-void LabFontCommitTexture()
-{
-#ifdef LABFONT_HAVE_SOKOL
-    // flush fontstash's font atlas to sokol-gfx texture
-    sfons_flush(LabFontInternal::fontStash());
-#endif
-}
-
 
 /* 
     The font code and data following is adapted from sokol_debugtext.h

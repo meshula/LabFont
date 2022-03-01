@@ -15,12 +15,14 @@
 
 struct LabFontState;
 
-extern "C" void r_begin(int disp_width, int disp_height);
+extern "C" void r_begin(LabFontDrawState*, 
+                        int disp_width, int disp_height);
 extern "C" void r_end(void);
 extern "C" void r_draw(void);
 extern "C" void r_init(LabFontState * font);
 extern "C" void r_draw_rect(mu_Rect rect, mu_Color color);
-extern "C" void r_draw_text(const char* text, mu_Vec2 pos, mu_Color color);
+extern "C" void r_draw_text(LabFontDrawState* ds,
+                            const char* text, mu_Vec2 pos, mu_Color color);
 extern "C" void r_draw_icon(int id, mu_Rect rect, mu_Color color);
 extern "C" int r_get_text_width(const char* text, int len);
 extern "C" int r_get_text_height(void);
@@ -88,7 +90,7 @@ void r_init(LabFontState * font_) {
 }
 
 extern "C"
-void r_begin(int disp_width, int disp_height) {
+void r_begin(LabFontDrawState* ds, int disp_width, int disp_height) {
 #ifdef LABFONT_HAVE_SOKOL
     sgl_defaults();
     sgl_matrix_mode_projection();
@@ -152,14 +154,14 @@ inline uint32_t ToPackedABGR(const mu_Color* val)
 }
 
 extern "C"
-void r_draw_text(const char* text, mu_Vec2 pos, mu_Color color) {
+void r_draw_text(LabFontDrawState* ds, const char* text, mu_Vec2 pos, mu_Color color) {
 #if 1
     LabFontColor c;
     c.rgba[0] = color.r;
     c.rgba[1] = color.g;
     c.rgba[2] = color.b;
     c.rgba[3] = color.a;
-    LabFontDrawColor(text, &c, (float) pos.x, (float) pos.y, font);
+    LabFontDrawColor(ds, text, &c, (float) pos.x, (float) pos.y, font);
 #else
     mu_Rect dst = { pos.x, pos.y, 0, 0 };
     for (const char* p = text; *p; p++) {
@@ -285,15 +287,15 @@ extern "C" mu_Context* lab_microui_init(LabFontState * fs)
     return &ctx;
 }
 
-extern "C" void lab_microui_render(int w, int h, LabZep* zep)
+extern "C" void lab_microui_render(LabFontDrawState* ds, int w, int h, LabZep* zep)
 {
     /* micro-ui rendering */
-    r_begin(w, h);
+    r_begin(ds, w, h);
     //r_clear(mu_color(bg[0], bg[1], bg[2], 255));
     mu_Command* cmd = 0;
     while (mu_next_command(&ctx, &cmd)) {
         switch (cmd->type) {
-        case MU_COMMAND_TEXT: r_draw_text(cmd->text.str, cmd->text.pos, cmd->text.color); break;
+        case MU_COMMAND_TEXT: r_draw_text(ds, cmd->text.str, cmd->text.pos, cmd->text.color); break;
         case MU_COMMAND_RECT: r_draw_rect(cmd->rect.rect, cmd->rect.color); break;
         case MU_COMMAND_ICON: r_draw_icon(cmd->icon.id, cmd->icon.rect, cmd->icon.color); break;
         case MU_COMMAND_CLIP: r_set_clip_rect(cmd->clip.rect); break;

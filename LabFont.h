@@ -1,6 +1,10 @@
 #ifndef LABFONT_H
 #define LABFONT_H
 
+#if defined(__APPLE__) && defined(__OBJC__)
+#import <Metal/Metal.h>
+#endif
+
 #include <stdint.h>
 
 /*
@@ -20,6 +24,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#if defined(__APPLE__) && defined(__OBJC__)
+
+void LabFontInitMetal(id<MTLDevice>, MTLPixelFormat);
+void LabFontDrawBeginMetal(id<MTLRenderCommandEncoder>);
+
+#endif
+
 
 const int LabFontTypeTTF = 0;
 const int LabFontTypeQuadplay = 1;
@@ -69,20 +81,28 @@ struct LabFontState* LabFontStateBake_bind(
     float blur);
 
 
+struct LabFontDrawState;
+typedef struct LabFontDrawState LabFontDrawState;
+
+LabFontDrawState* LabFontDrawBegin(float originX, float originY,
+                                   float width, float height);
+void LabFontDrawEnd(LabFontDrawState*);
+
 
 // returns first pixel's x coordinate following the drawn text
-float LabFontDraw(const char* str, float x, float y, struct LabFontState* fs);
+float LabFontDraw(LabFontDrawState*, 
+        const char* str, float x, float y, struct LabFontState* fs);
 
 // returns first pixel following the drawn text, overrides color in font state
-float LabFontDrawColor(const char* str, struct LabFontColor* c, float x, float y, struct LabFontState* fs);
-float LabFontDrawSubstringColor(const char* str, const char* end, struct LabFontColor* c, float x, float y, struct LabFontState* fs);
+float LabFontDrawColor(LabFontDrawState*, 
+        const char* str, struct LabFontColor* c, float x, float y, struct LabFontState* fs);
+float LabFontDrawSubstringColor(LabFontDrawState*,
+        const char* str, const char* end, struct LabFontColor* c, float x, float y, struct LabFontState* fs);
 
 // measure a string. Measuring an empty string will fill in font metrics to ascender, descender, and h.
 struct LabFontSize LabFontMeasure(const char* str, struct LabFontState* fs);
 struct LabFontSize LabFontMeasureSubstring(const char* str, const char* end, struct LabFontState* fs);
 
-// this should be called once before rendering text, after all a frame's LabFontDraw calls have been made.
-void LabFontCommitTexture();
 
 #ifdef __cplusplus
 }

@@ -107,7 +107,7 @@ namespace
             c.rgba[1] = uint8_t(color.y * 255);
             c.rgba[2] = uint8_t(color.z * 255);
             c.rgba[3] = uint8_t(color.w * 255);
-            LabFontDrawSubstringColor((const char*)text_begin, (const char*)text_end, &c, pos.x, pos.y, font.font);
+            LabFontDrawSubstringColor(ds, (const char*)text_begin, (const char*)text_end, &c, pos.x, pos.y, font.font);
 
             if (need_clip)
                 RestoreClip();
@@ -165,6 +165,8 @@ namespace
         {
             return *m_fonts[(int)type];
         }
+        
+        LabFontDrawState* ds = nullptr;
 
     private:
         NRectf _restoreClipRect;
