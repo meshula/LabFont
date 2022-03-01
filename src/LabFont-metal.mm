@@ -106,9 +106,9 @@ namespace LabFontInternal {
     constexpr uint32_t fons_rgba(const LabFontColor& c)
     {
         return ((uint32_t)c.rgba[0]) |
-            ((uint32_t)c.rgba[1] << 8) |
-            ((uint32_t)c.rgba[2] << 16) |
-            ((uint32_t)c.rgba[3] << 24);
+               ((uint32_t)c.rgba[1] << 8) |
+               ((uint32_t)c.rgba[2] << 16) |
+               ((uint32_t)c.rgba[3] << 24);
     }
 
     constexpr int fons_align(const LabFontAlign& a)
@@ -141,7 +141,6 @@ namespace LabFontInternal {
         fonsSetSpacing(fc, fs->spacing);
         fonsSetBlur(fc,    fs->blur);
     }
-
 }
 
 extern "C"
@@ -673,7 +672,9 @@ float LabFontDrawColor(LabFontDrawState* ds,
     return LabFontDrawSubstringColor(ds, str, NULL, c, x, y, fs);
 }
 
-float LabFontDrawSubstringColor(LabFontDrawState* ds, const char* str, const char* end, LabFontColor* c, float x, float y, LabFontState* fs)
+float LabFontDrawSubstringColor(LabFontDrawState* ds, 
+                                const char* str, const char* end, 
+                                LabFontColor* c, float x, float y, LabFontState* fs)
 {
     if (!fs || !str)
         return x;
@@ -712,7 +713,6 @@ LabFontSize LabFontMeasureSubstring(const char* str, const char* end, LabFontSta
         fonsVertMetrics(fc, &sz.ascender, &sz.descender, &sz.height);
         return sz;
     }
-#ifdef LABFONT_HAVE_SOKOL
     else if (fs->font->img.id > 0) {
         if (fs->font->id == -1) {
             LabFontSize sz;
@@ -764,7 +764,6 @@ LabFontSize LabFontMeasureSubstring(const char* str, const char* end, LabFontSta
         }
   
     }
-#endif
     return { 0, 0, 0, 0 };
 }
 

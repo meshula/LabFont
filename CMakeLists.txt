@@ -5,8 +5,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(LABFONT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
-option(LABFONT_SOKOL "Use Sokol as the renderer" OFF)
-option(LABFONT_METAL "Use Metal as the renderer" ON)
+option(LABFONT_SOKOL "Use Sokol as the renderer" ON)
+option(LABFONT_METAL "Use Metal as the renderer" OFF)
 
 # Don't report that sample file installation up to date
 set(CMAKE_INSTALL_MESSAGE LAZY)
@@ -34,7 +34,7 @@ if (LABFONT_SOKOL)
 
     set(LABFONT_PLATFORM_LIBS sokol::sokol)
 
-    set(ST_GFX_DEFS LABFONT_HAVE_SOKOL)
+    list(APPEND ST_GFX_DEFS LABFONT_HAVE_SOKOL)
 endif()
 
 if (LABFONT_METAL)

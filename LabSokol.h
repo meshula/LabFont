@@ -3,8 +3,6 @@
 #include "sokol_app.h"
 //#include "sokol_fetch.h"
 #include "sokol_gfx.h"
-#include "fontstash.h"
-#include "sokol_fontstash.h"
 #include "sokol_gl.h"
 #include "sokol_glue.h"
 #include "sokol_time.h"

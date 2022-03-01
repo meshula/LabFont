@@ -39,10 +39,8 @@
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wsign-conversion"
 #endif
-#include <stdlib.h>     // malloc/free
-#include "fontstash.h"
-#define SOKOL_IMPL
-#include "sokol_fontstash.h"
+//#include <stdlib.h>     // malloc/free
+//#include "fontstash.h"
+//#define SOKOL_IMPL
+//#include "sokol_fontstash.h"
 
-#ifdef SOKOL_GL_IMPL_INCLUDED
-#endif

@@ -16,8 +16,8 @@ void add_quit_menu() {}
 extern "C" void add_quit_menu();
 #endif
 
-void fontDemo(float& dx, float& dy, float sx, float sy);
-
+void fontDemo(LabFontDrawState*, float& dx, float& dy, float sx, float sy);
+void font_demo_init(const char* path_);
 
 std::string g_app_path;
 static sgl_pipeline immediate_pipeline;
@@ -283,9 +283,8 @@ void frame(void) {
         sgl_end();
     }
 
-    if (true) {
-        fontDemo(dx, dy, sx, sy);
-    }
+    LabFontDrawState* ds = LabFontDrawBegin(0, 0, sapp_width(), sapp_height());
+    fontDemo(ds, dx, dy, sx, sy);
 
     //---- sgl UI layer
     if (true) {
@@ -297,10 +296,10 @@ void frame(void) {
         microui_style_window(state.mu_ctx);
         mu_end(state.mu_ctx);
 
-        lab_microui_render(sapp_width(), sapp_height(), zep);
+        lab_microui_render(ds, sapp_width(), sapp_height(), zep);
     }
 
-    LabFontCommitTexture();
+    LabFontDrawEnd(ds);
 
     // begin sokol GL rendering with a clear pass
     sg_pass_action pass_action;
