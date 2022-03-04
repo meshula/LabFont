@@ -3,12 +3,17 @@
 #include "../LabMicroUI.h"
 #include "../LabZep.h"
 #include "LabDirectories.h"
+#include "microui.h"
 #include "microui_demo.h"
 
 #include "../LabFont.h"
 
+#define LABIMMDRAW_IMPL
+#include "../LabImmDraw.h"
+
 #include <queue>
 #include <string>
+#include <math.h>
 
 #ifdef _MSC_VER
 void add_quit_menu() {}
@@ -22,6 +27,7 @@ void font_demo_init(const char* path_);
 std::string g_app_path;
 static sgl_pipeline immediate_pipeline;
 
+// nb: this shader is just sample text for the zep demo
 const std::string shader = R"R(
 #version 330 core
 
@@ -152,6 +158,8 @@ static void init()
     fontPixelHeight = 18;
     //static LabFontState* zep_st = LabFontStateBake(state.font_cousine, (float) fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
     static LabFontState* zep_st = LabFontStateBake(font_robot18, (float)fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
+
+    // fill in some sample text, a shader
     zep = LabZep_create(zep_st, "Shader.frag", shader.c_str());
 }
 
@@ -266,6 +274,42 @@ void frame(void) {
     sgl_matrix_mode_projection();
     sgl_ortho(0.0f, (float) sapp_width(), (float) sapp_height(), 0.0f, -1.0f, +1.0f);
     sgl_scissor_rect(0, 0, sapp_width(), sapp_height(), true);
+
+    size_t buff_size = lab_imm_size_bytes(256);
+    float* buff = (float*) malloc(buff_size);
+    LabImmContext lic;
+    lab_imm_begin(&lic, 256, labprim_lines, true, buff);
+
+    for (int i = 0; i < 256; ++i) {
+        float th = 6.282f * (float) i / 256.f;
+        float s = sinf(th);
+        float c = cosf(th);
+        lab_imm_v2f(&lic, 250 + 150 * s, 250 + 150 * c);
+    }
+
+    float* curr = buff;
+    sgl_disable_texture();
+
+    bool can_draw = true;
+    switch (lic.prim) {
+        case labprim_lines: sgl_begin_lines(); break;
+        case labprim_quads: sgl_begin_quads(); break;
+        case labprim_tristrip: sgl_begin_triangle_strip(); break;
+        case labprim_linestrip: sgl_begin_triangle_strip(); break;
+        case labprim_triangles: sgl_begin_triangles(); break;
+        default: can_draw = false; break;
+    }
+
+    if (can_draw) {
+        for (int i = 0; i < 256; ++i) {
+            sgl_c4b(255, 255, 255, 255);
+            sgl_v2f(curr[0], curr[1]);
+            curr += 8;
+        }
+        sgl_end();
+    }
+    free(buff);
+
 
     if (false) {
         sgl_enable_texture();

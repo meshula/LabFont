@@ -18,11 +18,13 @@
 #include <zep/extensions/repl/mode_repl.h>
 
 #include <string>
+#include <vector>
 
 namespace
 {
 
     using namespace Zep;
+    using std::vector;
 
     inline Zep::NVec2f GetPixelScale() { return { 1,1 }; }
     const float DemoFontPtSize = 14.0f;
@@ -82,19 +84,27 @@ namespace
                 (int)_clipRect.bottomRightPx.x - (int)_clipRect.topLeftPx.x,
                 (int)_clipRect.bottomRightPx.y - (int)_clipRect.topLeftPx.y, true);
 #endif
-            
+            _clipStack.push_back(_clipRect);
         }
         void RestoreClip() const
         {
+            NRectf rect = { 0, 0, 10000, 10000 };
+            if (_clipStack.size()) {
+                _clipStack.pop_back();
+                if (_clipStack.size()) {
+                    rect =_clipStack.back();
+                    _clipStack.pop_back();
+                }
+            }
 #ifdef LABFONT_HAVE_SOKOL
-            sgl_scissor_rect((int)_restoreClipRect.topLeftPx.x, (int)_restoreClipRect.topLeftPx.y,
-                (int)_restoreClipRect.bottomRightPx.x - (int)_restoreClipRect.topLeftPx.x,
-                (int)_restoreClipRect.bottomRightPx.y - (int)_restoreClipRect.topLeftPx.y, true);
+            sgl_scissor_rect((int) rect.topLeftPx.x, (int) rect.topLeftPx.y,
+                    (int) rect.bottomRightPx.x - (int) rect.topLeftPx.x,
+                    (int) rect.bottomRightPx.y - (int) rect.topLeftPx.y, true);
 #endif
-            
         }
 
-        void DrawChars(ZepFont& zfont, const NVec2f& pos, const NVec4f& color, const uint8_t* text_begin, const uint8_t* text_end) const override
+        void DrawChars(ZepFont& zfont, const NVec2f& pos, const NVec4f& color, 
+                const uint8_t* text_begin, const uint8_t* text_end) const override
         {
             auto font = static_cast<LabVimFont&>(zfont);
 
@@ -102,12 +112,17 @@ namespace
             if (need_clip)
                 ApplyClip();
 
+            if (text_end == nullptr)
+                text_end = text_begin + strlen((const char*) text_begin);
+
             LabFontColor c;
             c.rgba[0] = uint8_t(color.x * 255);
             c.rgba[1] = uint8_t(color.y * 255);
             c.rgba[2] = uint8_t(color.z * 255);
             c.rgba[3] = uint8_t(color.w * 255);
-            LabFontDrawSubstringColor(ds, (const char*)text_begin, (const char*)text_end, &c, pos.x, pos.y, font.font);
+            LabFontDrawSubstringColor(ds, 
+                    (const char*)text_begin, (const char*)text_end, &c, 
+                    pos.x, pos.y, font.font);
 
             if (need_clip)
                 RestoreClip();
@@ -151,9 +166,9 @@ namespace
                 RestoreClip();
         }
 
-        void SetRestoreClipRect(const NRectf& rc)
+        void SetRestoreClipRectix(const NRectf& rc)
         {
-            _restoreClipRect = rc;
+           // _restoreClipRect = rc;
         }
 
         virtual void SetClipRect(const NRectf& rc) override
@@ -169,8 +184,8 @@ namespace
         LabFontDrawState* ds = nullptr;
 
     private:
-        NRectf _restoreClipRect;
         NRectf _clipRect;
+        mutable vector<NRectf> _clipStack;
     };
 
 
@@ -632,8 +647,10 @@ extern "C" void LabZep_input_sokol_key(LabZep*, int sapp_key, bool shift, bool c
 
 extern "C" void LabZep_render(LabZep* zep)
 {
-    if (zep) 
+    if (zep) { 
         zep->zep->spEditor->Display();
+        zep->zep->renderer->RestoreClip();
+    }
 }
 
 extern "C" void LabZep_process_events(LabZep* zep, 
@@ -668,7 +685,7 @@ extern "C" void LabZep_process_events(LabZep* zep,
 extern "C" void LabZep_position_editor(LabZep * zep,
     int x, int y, int w, int h)
 {
-    zep->zep->renderer->SetRestoreClipRect({ (float)x, (float)y, (float)w, (float)h });
+  //  zep->zep->renderer->SetRestoreClipRect({ (float)x, (float)y, (float)w, (float)h });
     zep->zep->spEditor->SetDisplayRegion({ (float)x, (float)y }, {(float)x + w, (float)y + h });
 }
 

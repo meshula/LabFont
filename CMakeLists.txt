@@ -29,8 +29,9 @@ if (LABFONT_SOKOL)
     include(sokol.cmake)
 
     set(LABFONT_PLATFORM_SRC
+        src/main-sokol.cpp
         src/LabFont-sokol.cpp
-        src/main-sokol.cpp)
+        src/lab_microui-sokol.cpp)
 
     set(LABFONT_PLATFORM_LIBS sokol::sokol)
 
@@ -41,6 +42,7 @@ if (LABFONT_METAL)
     set(LABFONT_PLATFORM_SRC
         src/main-metal.mm
         src/LabFont-metal.mm
+        src/lab_microui-metal.mm
         src/mtlfontstash.h)
     set(ST_GFX_DEFS LABFONT_HAVE_METAL)
 endif()
@@ -53,7 +55,6 @@ set(SRC
     LabSokol.h
     src/LabFontDemo.cpp
     src/lab_zep.cpp
-    src/lab_microui.cpp
     src/microui.c
     src/microui.h
     src/microui_demo.cpp
@@ -80,7 +81,7 @@ set(BUILD_DEMOS OFF)
 set(BUILD_TESTS OFF)
 add_subdirectory(third/zep)
 
-add_executable(LabFontDemo MACOSX_BUNDLE ${SRC} ${PLATFORM_SRC})
+add_executable(LabFontDemo ${SRC} ${PLATFORM_SRC})
 set_property(TARGET LabFontDemo PROPERTY CXX_STANDARD 17)
 
 if (APPLE)
@@ -95,6 +96,7 @@ if (APPLE)
         ${CMAKE_CURRENT_BINARY_DIR}/resources/MacBundleInfo.plist)
 
     set_target_properties(LabFontDemo PROPERTIES
+        BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_BINARY_DIR}/resources/MacBundleInfo.plist)
 
     target_compile_definitions(LabFontDemo PRIVATE
@@ -139,7 +141,7 @@ install(TARGETS LabFontDemo
          RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
          BUNDLE  DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 
-install(FILES
+set(LABFONT_RESOURCES
     "${LABFONT_ROOT}/resources/DroidSansJapanese.ttf"
     "${LABFONT_ROOT}/resources/DroidSerif-Bold.ttf"
     "${LABFONT_ROOT}/resources/DroidSerif-Italic.ttf"
@@ -148,5 +150,8 @@ install(FILES
     "${LABFONT_ROOT}/resources/robot-18.font.json"
     "${LABFONT_ROOT}/resources/hauer-12.png"
     "${LABFONT_ROOT}/resources/hauer-12.font.json"
-    "${LABFONT_ROOT}/resources/Cousine-Regular.ttf"
+    "${LABFONT_ROOT}/resources/Cousine-Regular.ttf")
+
+install(FILES ${LABFONT_RESOURCES}
     DESTINATION share/lab_font_demo)
+

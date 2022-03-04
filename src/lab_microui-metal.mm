@@ -136,7 +136,11 @@ void r_push_quad(mu_Rect dst, mu_Rect src, mu_Color color) {
 
 extern "C"
 void r_draw_rect(mu_Rect rect, mu_Color color) {
+#if 1
     r_push_quad(rect, rect, color);
+#else
+    r_push_quad(rect, atlas[ATLAS_WHITE], color);
+#endif
 }
 
 inline uint32_t ToPackedABGR(const mu_Color* val)
