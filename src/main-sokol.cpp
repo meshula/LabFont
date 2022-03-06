@@ -9,7 +9,7 @@
 #include "../LabFont.h"
 
 #define LABIMMDRAW_IMPL
-#include "../LabImmDraw.h"
+#include "../LabDrawImmediate.h"
 
 #include <queue>
 #include <string>
@@ -293,10 +293,9 @@ void frame(void) {
     bool can_draw = true;
     switch (lic.prim) {
         case labprim_lines: sgl_begin_lines(); break;
-        case labprim_quads: sgl_begin_quads(); break;
-        case labprim_tristrip: sgl_begin_triangle_strip(); break;
         case labprim_linestrip: sgl_begin_triangle_strip(); break;
         case labprim_triangles: sgl_begin_triangles(); break;
+        case labprim_tristrip: sgl_begin_triangle_strip(); break;
         default: can_draw = false; break;
     }
 
@@ -304,7 +303,7 @@ void frame(void) {
         for (int i = 0; i < 256; ++i) {
             sgl_c4b(255, 255, 255, 255);
             sgl_v2f(curr[0], curr[1]);
-            curr += 8;
+            curr += 6;
         }
         sgl_end();
     }

@@ -8,18 +8,28 @@
 #define LAB_EXTERNC
 #endif
 
+// nb: if points are to be supported, the associated vertex shader needs
+// to explicitly output [[point_size]] under Metal or the behavior is undefined
+// points not supported since there's no data_point_size attribute on the 
+// Batch struct at the moment.
+
+// nb: quads are not a hardware primitive. To render quads, as required by a UI
+// for example, emit this quad 
+// 0 ---- 1
+// |      |
+// 3 ---- 2 as 0-1-2, 0-2-3.
+
 typedef enum {
     labprim_lines,
-    labprim_quads,
-    labprim_tristrip,
     labprim_linestrip,
     labprim_triangles,
+    labprim_tristrip,
 } LabPrim;
 
 typedef struct {
     float* data_pos;
     float* data_st;
-    float* data_rgba;
+    uint32_t* data_rgba;
     int stride;
 
     int sz;
@@ -27,20 +37,35 @@ typedef struct {
 
     LabPrim prim;
     bool interleaved;
-    float s, t, r, g, b, a;
+    float s, t;
+    uint8_t r, g, b, a;
 } LabImmContext;
 
 LAB_EXTERNC size_t lab_imm_size_bytes(int vert_count);
-LAB_EXTERNC void lab_imm_begin(LabImmContext*, int sz, LabPrim prim, bool interleaved, float* data);
+
+LAB_EXTERNC void lab_imm_begin(LabImmContext*, 
+                    int sz, LabPrim prim, bool interleaved, float* data);
 LAB_EXTERNC void lab_imm_end(LabImmContext*);
 
-LAB_EXTERNC void lab_imm_batch_v2f(LabImmContext*, int count, float* v2f);
-LAB_EXTERNC void lab_imm_batch_v2f_st(LabImmContext*, int count, float* v2f, float* st);
-LAB_EXTERNC void lab_imm_batch_v2f_st_rgba(LabImmContext*, int count, float* v2f, float* st, float* rgba);
+LAB_EXTERNC void lab_imm_batch_v2f(LabImmContext*, 
+                    int count, float* v2f);
+LAB_EXTERNC void lab_imm_batch_v2f_st(LabImmContext*, 
+                    int count, float* v2f, float* st);
+LAB_EXTERNC void lab_imm_batch_v2f_st_rgba(LabImmContext*, 
+                    int count, float* v2f, float* st, uint32_t* rgba);
 
-LAB_EXTERNC void lab_imm_v2f(LabImmContext*, float x, float y);
-LAB_EXTERNC void lab_imm_v2f_st(LabImmContext*, float x, float y, float s, float t);
-LAB_EXTERNC void lab_imm_v2f_st_rgba(LabImmContext*, float x, float y, float s, float t, float r, float g, float b, float a);
+LAB_EXTERNC void lab_imm_v2f(LabImmContext*,
+                    float x, float y);
+LAB_EXTERNC void lab_imm_v2f_st(LabImmContext*, 
+                    float x, float y, float s, float t);
+LAB_EXTERNC void lab_imm_v2f_st_rgba(LabImmContext*,
+                    float x, float y, float s, float t, 
+                    uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+//-----------------------------------------------------------------------------
+// utility
+// [32 ABGR 0]
+uint32_t lab_imm_pack_RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+
 
 #endif
 
@@ -48,29 +73,36 @@ LAB_EXTERNC void lab_imm_v2f_st_rgba(LabImmContext*, float x, float y, float s, 
 
 #include <string.h>
 
-LAB_EXTERNC size_t lab_imm_size_bytes(int vert_count) {
-    return sizeof(float) * vert_count * (3 + 2 + 4);
+uint32_t lab_imm_pack_RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+{
+    return (r) | (g << 8) | (b << 16) | (a << 24);
 }
 
-LAB_EXTERNC void lab_imm_begin(LabImmContext* lc, int sz, LabPrim prim, bool interleaved, float* data) {
+LAB_EXTERNC size_t lab_imm_size_bytes(int vert_count) {
+    return sizeof(float) * vert_count * (3 + 2 + 1);
+}
+
+LAB_EXTERNC void lab_imm_begin(LabImmContext* lc, 
+        int sz, LabPrim prim, bool interleaved, float* data) 
+{
     memset(lc, 0, sizeof(LabImmContext));
     lc->sz = sz;
     lc->prim = prim;
     lc->interleaved = interleaved;
-    lc->r = 1.f;
-    lc->g = 1.f;
-    lc->b = 1.f;
-    lc->a = 1.f;
+    lc->r = 255;
+    lc->g = 255;
+    lc->b = 255;
+    lc->a = 255;
     lc->data_pos = data;
     if (interleaved) {
-        lc->stride = 8;
+        lc->stride = 6;
         lc->data_st = data + 2;
-        lc->data_rgba = data + (3 + 2);
+        lc->data_rgba = (uint32_t*) (data + (3 + 2));
     }
     else {
         lc->stride = 0;
         lc->data_st = data + sz * 3;
-        lc->data_rgba = data + sz * (3 + 2); 
+        lc->data_rgba = (uint32_t*) (data + sz * (3 + 2)); 
     }
 }
 
@@ -78,6 +110,7 @@ LAB_EXTERNC void lab_imm_end(LabImmContext*) {
 }
 
 LAB_EXTERNC void lab_imm_batch_v2f(LabImmContext* lc, int count, float* v2f) {
+    uint32_t c = lab_imm_pack_RGBA(lc->r, lc->g, lc->b, lc->a);
     if (!lc->interleaved) {
         float* start = lc->data_pos + sizeof(float) * 2 * lc->count;
         memcpy(start, v2f, sizeof(float) * 2 * count);
@@ -86,27 +119,21 @@ LAB_EXTERNC void lab_imm_batch_v2f(LabImmContext* lc, int count, float* v2f) {
             *start++ = lc->s;
             *start++ = lc->t;
         }
-        start = lc->data_rgba + sizeof(float) * 4 * lc->count;
+        uint32_t* cstart = lc->data_rgba + sizeof(float) * 4 * lc->count;
         for (int i = 0; i < count; ++i) {
-            *start++ = lc->r;
-            *start++ = lc->g;
-            *start++ = lc->b;
-            *start++ = lc->a;
+            *cstart++ = c;
         }
     }
     else {
         float* start_pos = lc->data_pos + lc->count;
         float* start_st = lc->data_st + lc->count;
-        float* start_rgba = lc->data_rgba + lc->count;
+        uint32_t* start_rgba = (uint32_t*)(lc->data_rgba + lc->count);
         for (int i = 0; i < count; ++i) {
             start_pos[0] = *v2f++;
             start_pos[1] = *v2f++;
             start_st[0] = lc->s;
             start_st[1] = lc->t;
-            start_rgba[0] = lc->r;
-            start_rgba[1] = lc->g;
-            start_rgba[2] = lc->b;
-            start_rgba[3] = lc->a;
+            start_rgba[0] = c;
             start_pos += lc->stride;
             start_st += lc->stride;
             start_rgba += lc->stride;
@@ -115,18 +142,18 @@ LAB_EXTERNC void lab_imm_batch_v2f(LabImmContext* lc, int count, float* v2f) {
     lc->count += count;
 }
 
-LAB_EXTERNC void lab_imm_batch_v2f_st(LabImmContext* lc, int count, float* v2f, float* st) {
+LAB_EXTERNC void lab_imm_batch_v2f_st(LabImmContext* lc, int count, 
+    float* v2f, float* st) 
+{
+    uint32_t c = lab_imm_pack_RGBA(lc->r, lc->g, lc->b, lc->a);
     if (!lc->interleaved) {
         float* start = lc->data_pos + sizeof(float) * 2 * lc->count;
         memcpy(start, v2f, sizeof(float) * 2 * count);
         start = lc->data_st + sizeof(float) * 2 * lc->count;
         memcpy(start, st, sizeof(float) * 2 * count);
-        start = lc->data_rgba + sizeof(float) * 4 * lc->count;
+        uint32_t* cstart = (uint32_t*) (lc->data_rgba + sizeof(float) * 4 * lc->count);
         for (int i = 0; i < count; ++i) {
-            *start++ = lc->r;
-            *start++ = lc->g;
-            *start++ = lc->b;
-            *start++ = lc->a;
+            *cstart++ = c;
         }
     }
     else {
@@ -136,23 +163,24 @@ LAB_EXTERNC void lab_imm_batch_v2f_st(LabImmContext* lc, int count, float* v2f, 
             *start++ = *v2f++;
             *start++ = *st++;
             *start++ = *st++;
-            *start++ = lc->r;
-            *start++ = lc->g;
-            *start++ = lc->b;
-            *start++ = lc->a;            
+            uint32_t* cstart = (uint32_t*) start;
+            *cstart = c;
+            start++;
         }
     }
     lc->count += count;
 }
 
-LAB_EXTERNC void lab_imm_batch_v2f_st_rgba(LabImmContext* lc, int count, float* v2f, float* st, float* rgba) {
+LAB_EXTERNC void lab_imm_batch_v2f_st_rgba(LabImmContext* lc, int count, 
+    float* v2f, float* st, uint32_t* rgba) 
+{
     if (!lc->interleaved) {
         float* start = lc->data_pos + lc->count;
         memcpy(start, v2f, sizeof(float) * 2 * count);
         start = lc->data_st + sizeof(float) * 2 * lc->count;
         memcpy(start, st, sizeof(float) * 2 * count);
-        start = lc->data_rgba + sizeof(float) * 4 * lc->count;
-        memcpy(start, rgba, sizeof(float) * 4 * count);
+        uint32_t* cstart = (uint32_t*) (lc->data_rgba + sizeof(float) * 4 * lc->count);
+        memcpy(cstart, rgba, sizeof(uint32_t) * count);
     }
     else {
         float* start = lc->data_pos + lc->stride * lc->count;
@@ -161,16 +189,16 @@ LAB_EXTERNC void lab_imm_batch_v2f_st_rgba(LabImmContext* lc, int count, float* 
             *start++ = *v2f++;
             *start++ = *st++;
             *start++ = *st++;
-            *start++ = *rgba++;
-            *start++ = *rgba++;
-            *start++ = *rgba++;
-            *start++ = *rgba++;
+            uint32_t* cstart = (uint32_t*) start;
+            *cstart = *rgba++;
+            start++;
         }
     }
     lc->count += count;
 }
 
 LAB_EXTERNC void lab_imm_v2f(LabImmContext* lc, float x, float y) {
+    uint32_t c = lab_imm_pack_RGBA(lc->r, lc->g, lc->b, lc->a);
     if (!lc->interleaved) {
         float* start = lc->data_pos + lc->count;
         start[0] = x;
@@ -178,11 +206,8 @@ LAB_EXTERNC void lab_imm_v2f(LabImmContext* lc, float x, float y) {
         start = lc->data_st + sizeof(float) * 2 * lc->count;
         start[0] = lc->s;
         start[1] = lc->t;
-        start = lc->data_rgba + sizeof(float) * 4 * lc->count;
-        start[0] = lc->r;
-        start[1] = lc->g;
-        start[2] = lc->b;
-        start[3] = lc->a;
+        uint32_t* cstart = (uint32_t*) (lc->data_rgba + sizeof(float) * 4 * lc->count);
+        *cstart = c;
     }
     else {
         float* start = lc->data_pos + lc->stride * lc->count;
@@ -191,20 +216,23 @@ LAB_EXTERNC void lab_imm_v2f(LabImmContext* lc, float x, float y) {
         *start++ = lc->s;
         *start++ = lc->t;
         *start++ = lc->r;
-        *start++ = lc->g;
-        *start++ = lc->b;
-        *start++ = lc->a;
+        uint32_t* cstart = (uint32_t*) start;
+        *cstart = c;
     }
     ++lc->count;
 }
 
-LAB_EXTERNC void lab_imm_v2f_st(LabImmContext* lc, float x, float y, float s, float t) {
+LAB_EXTERNC void lab_imm_v2f_st(LabImmContext* lc, 
+        float x, float y, float s, float t) 
+{
     lc->s = s;
     lc->t = t;
     lab_imm_v2f(lc, x, y);
 }
 
-LAB_EXTERNC void lab_imm_v2f_st_rgba(LabImmContext* lc, float x, float y, float s, float t, float r, float g, float b, float a) {
+LAB_EXTERNC void lab_imm_v2f_st_rgba(LabImmContext* lc, 
+    float x, float y, float s, float t, uint8_t r, uint8_t g, uint8_t b, uint8_t a) 
+{
     lc->s = s;
     lc->t = t;
     lc->r = r;

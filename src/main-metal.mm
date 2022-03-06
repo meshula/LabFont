@@ -11,6 +11,11 @@
 #include "fontstash.h"
 #include "mtlfontstash.h"
 
+#define LABIMMDRAW_IMPL
+#include "../LabDrawImmediate.h"
+#define LABIMMDRAW_METAL_IMPLEMENTATION
+#include "../LabDrawImmediate-metal.h"
+
 #import <Cocoa/Cocoa.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -43,11 +48,12 @@ std::string g_app_path;
 @end
 
 @interface MetalView () {
-    FONScontext *fs;
+    FONScontext* fs;
     int fontNormal;
     int fontItalic;
     int fontBold;
     int fontJapanese;
+    LabImmDrawContext* imm_ctx;
 }
 @property (nonatomic, strong) id<MTLDevice> device;
 @property (nonatomic, strong) id<MTLCommandQueue> commandQueue;
@@ -96,6 +102,9 @@ std::string g_app_path;
 
     std::string rsrc = lab_application_resource_path(g_app_path.c_str(),
                                                      "share/lab_font_demo");
+
+    self->imm_ctx = LabImmDrawContextCreate(self.device);
+    LabImmDrawSetRenderTargetPixelFormat(self->imm_ctx, MTLPixelFormatBGRA8Unorm);
 
     font_demo_init(rsrc.c_str());
     if (false) {
@@ -212,7 +221,8 @@ std::string g_app_path;
     pass.colorAttachments[0].texture = drawable.texture;
 
     id<MTLCommandBuffer> commandBuffer = [self.commandQueue commandBuffer];
-    id<MTLRenderCommandEncoder> renderCommandEncoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
+    id<MTLRenderCommandEncoder> renderCommandEncoder = 
+                    [commandBuffer renderCommandEncoderWithDescriptor:pass];
 
     CGSize drawableSize = self.metalLayer.drawableSize;
     int width = drawableSize.width, height = drawableSize.height;
@@ -225,6 +235,23 @@ std::string g_app_path;
     float sx = 150;
     float sy = 150;
     fontDemo(ds, dx, dy, sx, sy);
+
+    LabImmDrawSetRenderCommandEnconder(self->imm_ctx, renderCommandEncoder);
+    LabImmDrawSetViewport(self->imm_ctx, 0, 0, width, height);
+    size_t buff_size = lab_imm_size_bytes(256);
+    float* buff = (float*) malloc(buff_size);
+    LabImmContext lic;
+    lab_imm_begin(&lic, 256, labprim_lines, true, buff);
+
+    for (int i = 0; i < 256; ++i) {
+        float th = 6.282f * (float) i / 256.f;
+        float s = sinf(th);
+        float c = cosf(th);
+        lab_imm_v2f(&lic, 250 + 150 * s, 250 + 150 * c);
+    }
+
+    LabImmDrawBatch(self->imm_ctx, &lic);
+
 
     if (false) {
         /*            __  */

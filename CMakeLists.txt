@@ -5,8 +5,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(LABFONT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
-option(LABFONT_SOKOL "Use Sokol as the renderer" ON)
-option(LABFONT_METAL "Use Metal as the renderer" OFF)
+option(LABFONT_SOKOL "Use Sokol as the renderer" OFF)
+option(LABFONT_METAL "Use Metal as the renderer" ON)
 
 # Don't report that sample file installation up to date
 set(CMAKE_INSTALL_MESSAGE LAZY)
@@ -48,11 +48,15 @@ if (LABFONT_METAL)
 endif()
 
 set(SRC
+    LabDrawImmediate.h
+    LabDrawImmediate-metal.h
+    LabFont.h
+    LabSokol.h
+    LabZep.h
     ${LABFONT_PLATFORM_SRC}
     src/fontstash.h
     src/LabDirectories.cpp
     src/LabDirectories.h
-    LabSokol.h
     src/LabFontDemo.cpp
     src/lab_zep.cpp
     src/microui.c
@@ -66,8 +70,6 @@ set(SRC
     src/lab_floooh_8bitfont.h
     third/zep/extensions/repl/mode_repl.cpp
     third/zep/extensions/repl/mode_repl.h
-    LabFont.h
-    LabZep.h
     #src/VideoReader.c
     #src/VideoReader.h
 )

@@ -713,6 +713,7 @@ LabFontSize LabFontMeasureSubstring(const char* str, const char* end, LabFontSta
         fonsVertMetrics(fc, &sz.ascender, &sz.descender, &sz.height);
         return sz;
     }
+#if 0
     else if (fs->font->img.id > 0) {
         if (fs->font->id == -1) {
             LabFontSize sz;
@@ -762,8 +763,8 @@ LabFontSize LabFontMeasureSubstring(const char* str, const char* end, LabFontSta
             sz.height = (float) fs->font->charsz_y;
             return sz;
         }
-  
     }
+  #endif
     return { 0, 0, 0, 0 };
 }
 
