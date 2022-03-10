@@ -38,7 +38,7 @@ typedef struct {
     LabPrim prim;
     bool interleaved;
     float s, t;
-    uint8_t r, g, b, a;
+    uint32_t rgba;
 } LabImmContext;
 
 LAB_EXTERNC size_t lab_imm_size_bytes(int vert_count);
@@ -61,6 +61,9 @@ LAB_EXTERNC void lab_imm_v2f_st(LabImmContext*,
 LAB_EXTERNC void lab_imm_v2f_st_rgba(LabImmContext*,
                     float x, float y, float s, float t, 
                     uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+
+LAB_EXTERNC void lab_imm_c4f(LabImmContext*,
+                             float r, float g, float b, float a);
 //-----------------------------------------------------------------------------
 // utility
 // [32 ABGR 0]
@@ -78,6 +81,17 @@ uint32_t lab_imm_pack_RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
     return (r) | (g << 8) | (b << 16) | (a << 24);
 }
 
+
+LAB_EXTERNC void lab_imm_c4f(LabImmContext* lc,
+                             float r, float g, float b, float a)
+{
+    uint8_t ri = (uint8_t) (r * 255.f);
+    uint8_t gi = (uint8_t) (g * 255.f);
+    uint8_t bi = (uint8_t) (b * 255.f);
+    uint8_t ai = (uint8_t) (a * 255.f);
+    lc->rgba = lab_imm_pack_RGBA(ri, gi, bi, ai);
+}
+
 LAB_EXTERNC size_t lab_imm_size_bytes(int vert_count) {
     return sizeof(float) * vert_count * (3 + 2 + 1);
 }
@@ -89,20 +103,17 @@ LAB_EXTERNC void lab_imm_begin(LabImmContext* lc,
     lc->sz = sz;
     lc->prim = prim;
     lc->interleaved = interleaved;
-    lc->r = 255;
-    lc->g = 255;
-    lc->b = 255;
-    lc->a = 255;
+    lc->rgba = 0xffffffff;
     lc->data_pos = data;
     if (interleaved) {
-        lc->stride = 6;
+        lc->stride = 5;
         lc->data_st = data + 2;
-        lc->data_rgba = (uint32_t*) (data + (3 + 2));
+        lc->data_rgba = (uint32_t*) (data + (2 + 2));
     }
     else {
         lc->stride = 0;
-        lc->data_st = data + sz * 3;
-        lc->data_rgba = (uint32_t*) (data + sz * (3 + 2)); 
+        lc->data_st = data + sz * 2;
+        lc->data_rgba = (uint32_t*) (data + sz * (2 + 2));
     }
 }
 
@@ -110,16 +121,16 @@ LAB_EXTERNC void lab_imm_end(LabImmContext*) {
 }
 
 LAB_EXTERNC void lab_imm_batch_v2f(LabImmContext* lc, int count, float* v2f) {
-    uint32_t c = lab_imm_pack_RGBA(lc->r, lc->g, lc->b, lc->a);
+    uint32_t c = lc->rgba;
     if (!lc->interleaved) {
-        float* start = lc->data_pos + sizeof(float) * 2 * lc->count;
+        float* start = lc->data_pos + 2 * lc->count;
         memcpy(start, v2f, sizeof(float) * 2 * count);
-        start = lc->data_st + sizeof(float) * 2 * lc->count;
+        start = lc->data_st + 2 * lc->count;
         for (int i = 0; i < count; ++i) {
             *start++ = lc->s;
             *start++ = lc->t;
         }
-        uint32_t* cstart = lc->data_rgba + sizeof(float) * 4 * lc->count;
+        uint32_t* cstart = lc->data_rgba + lc->count;
         for (int i = 0; i < count; ++i) {
             *cstart++ = c;
         }
@@ -145,13 +156,13 @@ LAB_EXTERNC void lab_imm_batch_v2f(LabImmContext* lc, int count, float* v2f) {
 LAB_EXTERNC void lab_imm_batch_v2f_st(LabImmContext* lc, int count, 
     float* v2f, float* st) 
 {
-    uint32_t c = lab_imm_pack_RGBA(lc->r, lc->g, lc->b, lc->a);
+    uint32_t c = lc->rgba;
     if (!lc->interleaved) {
-        float* start = lc->data_pos + sizeof(float) * 2 * lc->count;
+        float* start = lc->data_pos + 2 * lc->count;
         memcpy(start, v2f, sizeof(float) * 2 * count);
-        start = lc->data_st + sizeof(float) * 2 * lc->count;
+        start = lc->data_st + 2 * lc->count;
         memcpy(start, st, sizeof(float) * 2 * count);
-        uint32_t* cstart = (uint32_t*) (lc->data_rgba + sizeof(float) * 4 * lc->count);
+        uint32_t* cstart = lc->data_rgba + lc->count;
         for (int i = 0; i < count; ++i) {
             *cstart++ = c;
         }
@@ -175,11 +186,11 @@ LAB_EXTERNC void lab_imm_batch_v2f_st_rgba(LabImmContext* lc, int count,
     float* v2f, float* st, uint32_t* rgba) 
 {
     if (!lc->interleaved) {
-        float* start = lc->data_pos + lc->count;
+        float* start = lc->data_pos + 2 * lc->count;
         memcpy(start, v2f, sizeof(float) * 2 * count);
-        start = lc->data_st + sizeof(float) * 2 * lc->count;
+        start = lc->data_st + 2 * lc->count;
         memcpy(start, st, sizeof(float) * 2 * count);
-        uint32_t* cstart = (uint32_t*) (lc->data_rgba + sizeof(float) * 4 * lc->count);
+        uint32_t* cstart = lc->data_rgba + lc->count;
         memcpy(cstart, rgba, sizeof(uint32_t) * count);
     }
     else {
@@ -198,15 +209,15 @@ LAB_EXTERNC void lab_imm_batch_v2f_st_rgba(LabImmContext* lc, int count,
 }
 
 LAB_EXTERNC void lab_imm_v2f(LabImmContext* lc, float x, float y) {
-    uint32_t c = lab_imm_pack_RGBA(lc->r, lc->g, lc->b, lc->a);
+    uint32_t c = lc->rgba;
     if (!lc->interleaved) {
-        float* start = lc->data_pos + lc->count;
+        float* start = lc->data_pos + 2 * lc->count;
         start[0] = x;
         start[1] = y;
-        start = lc->data_st + sizeof(float) * 2 * lc->count;
+        start = lc->data_st + 2 * lc->count;
         start[0] = lc->s;
         start[1] = lc->t;
-        uint32_t* cstart = (uint32_t*) (lc->data_rgba + sizeof(float) * 4 * lc->count);
+        uint32_t* cstart = lc->data_rgba + lc->count;
         *cstart = c;
     }
     else {
@@ -215,9 +226,9 @@ LAB_EXTERNC void lab_imm_v2f(LabImmContext* lc, float x, float y) {
         *start++ = y;
         *start++ = lc->s;
         *start++ = lc->t;
-        *start++ = lc->r;
         uint32_t* cstart = (uint32_t*) start;
         *cstart = c;
+        ++start;
     }
     ++lc->count;
 }
@@ -235,10 +246,7 @@ LAB_EXTERNC void lab_imm_v2f_st_rgba(LabImmContext* lc,
 {
     lc->s = s;
     lc->t = t;
-    lc->r = r;
-    lc->g = g;
-    lc->b = b;
-    lc->a = a;
+    lc->rgba = lab_imm_pack_RGBA(r, g, b, a);
     lab_imm_v2f(lc, x, y);
 }
 

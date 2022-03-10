@@ -177,6 +177,13 @@ LabImmDrawContextCreate(
     mtl->pixelFormat = MTLPixelFormatBGRA8Unorm;
     mtl->vertexBuffer = [device newBufferWithLength:MTLFONS_BUFFER_LENGTH 
                                             options:MTLResourceStorageModeShared];
+
+    LabImmCreateAtlas(mtl, 4, 4);
+    static uint8_t clear[16] = {
+        0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,
+    };
+    LabImmAtlasUpdate(mtl, 0, 0, 4, 4, clear);
     return mtl;
 }
 
@@ -346,11 +353,10 @@ void LabImmDrawArrays(LabImmDrawContext* mtl,
         case labprim_triangles: mtl_prim = MTLPrimitiveTypeTriangle; break;
         case labprim_tristrip: mtl_prim = MTLPrimitiveTypeTriangleStrip; break;
     }
-
-    [renderCommandEncoder setVertexBytes:&projectionMatrix 
+    [renderCommandEncoder setVertexBytes:&projectionMatrix
                                   length:sizeof(simd_float4x4) atIndex:1];
     [renderCommandEncoder setFragmentTexture:mtl->atlasTexture atIndex:0];
-    [renderCommandEncoder drawPrimitives:MTLPrimitiveTypeTriangle 
+    [renderCommandEncoder drawPrimitives:mtl_prim
                              vertexStart:0 vertexCount:nverts];
     mtl->currentVertexBufferOffset += bufferLength; // todo: align up
 }
@@ -365,7 +371,7 @@ void LabImmDrawBatch(
         return;
     }
 
-    if (batch->interleaved) {
+    if (!batch->interleaved) {
         LabImmDrawArrays(mtl, 
             batch->prim, 
             batch->data_pos, batch->data_st, batch->data_rgba, batch->count); 

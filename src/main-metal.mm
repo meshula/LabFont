@@ -100,8 +100,13 @@ std::string g_app_path;
 
     LabFontInitMetal(self.device, self.colorPixelFormat);
 
-    std::string rsrc = lab_application_resource_path(g_app_path.c_str(),
-                                                     "share/lab_font_demo");
+    const char* rsrc_str = lab_application_resource_path(g_app_path.c_str(),
+                                                         "share/lab_font_demo");
+    if (!rsrc_str) {
+        printf("resource path not found relative to %s\n", g_app_path.c_str());
+        exit(0);
+    }
+    std::string rsrc(rsrc_str);
 
     self->imm_ctx = LabImmDrawContextCreate(self.device);
     LabImmDrawSetRenderTargetPixelFormat(self->imm_ctx, MTLPixelFormatBGRA8Unorm);
@@ -241,8 +246,9 @@ std::string g_app_path;
     size_t buff_size = lab_imm_size_bytes(256);
     float* buff = (float*) malloc(buff_size);
     LabImmContext lic;
-    lab_imm_begin(&lic, 256, labprim_lines, true, buff);
+    lab_imm_begin(&lic, 256, labprim_linestrip, false, buff);
 
+    lab_imm_c4f(&lic, 0.f, 0.f, 1.f, 1.f);
     for (int i = 0; i < 256; ++i) {
         float th = 6.282f * (float) i / 256.f;
         float s = sinf(th);
@@ -251,7 +257,7 @@ std::string g_app_path;
     }
 
     LabImmDrawBatch(self->imm_ctx, &lic);
-
+    free(buff);
 
     if (false) {
         /*            __  */
