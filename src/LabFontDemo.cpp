@@ -152,7 +152,3 @@ void fontDemo(LabFontDrawState* ds, float& dx, float& dy, float sx, float sy) {
     LabFontDraw(ds, "DROP THAT SHADOW", dx+5*dpis, dy+5*dpis, n_st);
     LabFontDraw(ds, "DROP THAT SHADOW", dx, dy, o_st);
 }
-
-
-
-

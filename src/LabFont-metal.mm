@@ -7,18 +7,23 @@
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash.h"
 
-#define MTLFONTSTASH_IMPLEMENTATION
-#include "mtlfontstash.h"
+//#define MTLFONTSTASH_IMPLEMENTATION
+//#include "mtlfontstash.h"
+
+#include "../LabDrawImmediate.h"
+#include "../LabDrawImmediate-metal.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #include "rapidjson/document.h"
 
+#import <Metal/Metal.h>
 #include <array>
 #include <map>
 #include <string>
 #include <stdio.h>
+#include <vector>
 
 namespace lf_internal {
     void sokol8x8_unpack_font(const uint8_t* in_font, 
@@ -32,8 +37,10 @@ namespace lf_internal {
     extern const uint8_t sokol_font_oric[2048];
 }
 
-struct LabFont
+typedef struct LabFont
 {
+    id<MTLTexture> texture;
+
     int id;           // >= zero for a TTF
 
     int img_w, img_h; // non-zero for a QuadPlay texture
@@ -41,7 +48,8 @@ struct LabFont
     int charsz_x, charsz_y;
     int charspc_x, charspc_y;
     std::array<int8_t, 256> kern;
-};
+
+} LabFont;
 
 struct LabFontState
 {
@@ -55,7 +63,7 @@ struct LabFontState
 
 namespace LabFontInternal {
 
-    id<MTLDevice> _device = nil;
+    LabImmDrawContext* _imm_ctx = nullptr;
     id<MTLRenderCommandEncoder> _command_encoder = nil;
     MTLPixelFormat _format;
 
@@ -89,6 +97,8 @@ namespace LabFontInternal {
 
     FONScontext* fontStash()
     {
+        return _imm_ctx->fonsContext;
+#if 0
         static FONScontext* fs = nullptr;
         if (fs != nullptr)
             return fs;
@@ -101,6 +111,7 @@ namespace LabFontInternal {
                            atlas_dim, atlas_dim, FONS_ZERO_TOPLEFT);
         mtlfonsSetRenderTargetPixelFormat(fs, LabFontInternal::_format);
         return fs;
+#endif
     }
 
     constexpr uint32_t fons_rgba(const LabFontColor& c)
@@ -144,8 +155,8 @@ namespace LabFontInternal {
 }
 
 extern "C"
-void LabFontInitMetal(id<MTLDevice> device, MTLPixelFormat fmt) {
-    LabFontInternal::_device = device;
+void LabFontInitMetal(LabImmDrawContext* imm_ctx, MTLPixelFormat fmt) {
+    LabFontInternal::_imm_ctx = imm_ctx;
     LabFontInternal::_format = fmt;
 }
 
@@ -162,15 +173,14 @@ LabFontDrawState* LabFontDrawBegin(float ox, float oy, float w, float h)
         .height = h, .width = w
     };
     FONScontext* fc = LabFontInternal::fontStash();
-    mtlfonsSetRenderCommandEncoder(fc, 
-                LabFontInternal::_command_encoder, viewport);
+    //mtlfonsSetRenderCommandEncoder(fc,
+    //            LabFontInternal::_command_encoder, viewport);
     fonsClearState(fc);
     
     return nullptr;
 }
 
 void LabFontDrawEnd(LabFontDrawState* st) {
-    LabFontInternal::_device = nil;
     LabFontInternal::_command_encoder = nil;
 }
 
@@ -320,26 +330,27 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                 int addr = i * 4;
                 data[addr + 3] = data[addr] == 0 ? 0 : 255;
             }
-#ifdef LABFONT_HAVE_SOKOL
-            sg_image_desc img_desc;
-            memset(&img_desc, 0, sizeof(img_desc));
-            img_desc.width = x;
-            img_desc.height = y;
-            img_desc.min_filter = SG_FILTER_LINEAR;
-            img_desc.mag_filter = SG_FILTER_LINEAR;
-            img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
-            img_desc.data.subimage[0][0].ptr = data;
-            img_desc.data.subimage[0][0].size = (size_t)(x * 4 * y);
-            r->img = sg_make_image(&img_desc);
+            
+            MTLTextureDescriptor *descriptor =
+                [MTLTextureDescriptor
+                    texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                 width:x
+                                                height:y
+                                             mipmapped:NO];
 
-            debug_texture = r->img;
+            r->texture = [LabFontInternal::_imm_ctx->device
+                                newTextureWithDescriptor:descriptor];
 
-            if (r->img.id == 0)
-            {
+            if (r->texture == nil) {
+                printf("Could not create a Metal texture of size %d x %d\n", x, y);
                 stbi_image_free(data);
                 return nullptr;
             }
-#endif
+
+            [r->texture replaceRegion:MTLRegionMake2D(0, 0, x, y)
+                          mipmapLevel:0
+                            withBytes:data
+                          bytesPerRow:x * 4];
             
             r->img_w = x;
             r->img_h = y;
@@ -481,20 +492,14 @@ LabFont* LabFontGet(const char* name)
     return it->second.get();
 }
 
-#ifdef LABFONT_HAVE_SOKOL
 static bool qp_must_init = true;
-static sgl_pipeline qp_pip;
 
 static void quadplay_font_init()
 {
-    sg_pipeline_desc desc;
-    memset(&desc, 0, sizeof(desc));
-    desc.colors[0].blend.enabled = true;
-    desc.colors[0].blend.src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA;
-    desc.colors[0].blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
-    qp_pip = sgl_make_pipeline(&desc);
+    qp_must_init = false;
 }
 
+#ifdef LABFONT_HAVE_SOKOL
 
 
 static float sokol_8x8_draw(const char* str, const char* end, 
@@ -569,25 +574,37 @@ static float sokol_8x8_draw(const char* str, const char* end,
     sgl_disable_texture();
     return x + kern + (idx * px);
 }
+#endif
 
 static float quadplay_font_draw(const char* str, const char* end, 
         LabFontColor* c, float x, float y, LabFontState* fs)
 {
-    if (str == nullptr || fs == nullptr || fs->font->img.id <= 0)
+    if (str == nullptr || fs == nullptr || fs->font->texture == nil)
         return x;
+
     if (end == nullptr)
         end = str + strlen(str);
+
     if (qp_must_init) {
         quadplay_font_init();
         qp_must_init = false;
     }
 
-    sgl_push_pipeline();
-    sgl_load_pipeline(qp_pip);
-    sgl_enable_texture();
-    sgl_texture(fs->font->img);
-    sgl_begin_quads();
-    sgl_c4b(c->rgba[0], c->rgba[1], c->rgba[2], c->rgba[3]);
+    FONScontext* fc = LabFontInternal::fontStash();
+    uint32_t* rgba_p = (uint32_t*) & c->rgba;
+    uint32_t rgba = *rgba_p;
+    int count = end - str;
+    
+    static std::vector<float> verts;
+    static std::vector<float> tcoords;
+    static std::vector<uint32_t> colors;
+    
+    verts.clear();
+    verts.reserve(count * 6 * 2);
+    tcoords.clear();
+    tcoords.reserve(count * 6 * 2);
+    colors.clear();
+    colors.reserve(count * 6);
 
     int px = fs->font->img_w / 32;
     int py = fs->font->img_h / 14;
@@ -625,20 +642,40 @@ static float quadplay_font_draw(const char* str, const char* end,
         float y0 = y;
         float x1 = x0 + px;
         float y1 = y0 + py;
-        sgl_v2f_t2f(x0, y0, u0, v0);
-        sgl_v2f_t2f(x1, y0, u1, v0);
-        sgl_v2f_t2f(x1, y1, u1, v1);
-        sgl_v2f_t2f(x0, y1, u0, v1);
+        
+        verts.push_back(x0); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y1);
+        verts.push_back(x0); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y1);
+        verts.push_back(x0); verts.push_back(y1);
+
+        tcoords.push_back(u0); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v1);
+        tcoords.push_back(u0); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v1);
+        tcoords.push_back(u0); tcoords.push_back(v1);
+
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
 
         kern += fs->font->kern[*p] + fs->font->charspc_x;
     }
-
-    sgl_end();
-    sgl_pop_pipeline();
-    sgl_disable_texture();
+    
+//    LabImmDrawArrays(ds->imm_ctx, 2, labprim_triangles,
+//                     verts.data(), tcoords.data(), colors.data(),
+//                     count * 6)
+                     
+//    mtlfonsDrawTriangleBatch(LabFontInternal::fontStash(), fs->font->texture,
+//                     verts.data(), tcoords.data(), colors.data(),
+//                     count * 6);
     return x + kern + (idx * px);
 }
-#endif
 
 float LabFontDraw(LabFontDrawState* ds, const char* str, float x, float y, LabFontState* fs)
 {
@@ -651,18 +688,17 @@ float LabFontDraw(LabFontDrawState* ds, const char* str, float x, float y, LabFo
         return fonsDrawText(fc, x, y, str, NULL);
     }
     
-#ifdef LABFONT_HAVE_SOKOL
-    else if (fs->font->img.id > 0) {
+    else if (fs->font->texture != nil) {
         if (fs->font->id == -1) {
-            LabFontColor c = { 255,255,255,255 };
-            return quadplay_font_draw(str, nullptr, &c, x, y, fs);
+            return quadplay_font_draw(str, nullptr, &fs->color, x, y, fs);
         }
+#ifdef LABFONT_HAVE_SOKOL
         else if (fs->font->id == -2) {
             LabFontColor c = { 255,255,255,255 };
-            return sokol_8x8_draw(str, nullptr, &c, x, y, fs);
+            return sokol_8x8_draw(str, nullptr, &fs->color, x, y, fs);
         }
-    }
 #endif
+    }
     return x;
 }
 
@@ -2367,6 +2403,126 @@ const uint8_t sokol_font_oric[2048] = {
     0xD5, 0xEA, 0xD5, 0xEA, 0xD5, 0xEA, 0xD5, 0xEA, // FE
     0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, // FF
 };
+
+// Asteroids vector font
+
+/// https://trmm.net/Asteroids_font
+
+#define P(x,y) ((((x) & 0xF) << 4) | (((y) & 0xF) << 0))
+#define FONT_UP 0xFE
+#define FONT_LAST 0xFF
+
+const uint8_t vecfont[95][8] = {
+  ['0' - 0x20] = { P(0,0), P(8,0), P(8,12), P(0,12), P(0,0), P(8,12), FONT_LAST },
+  ['1' - 0x20] = { P(4,0), P(4,12), P(3,10), FONT_LAST },
+  ['2' - 0x20] = { P(0,12), P(8,12), P(8,7), P(0,5), P(0,0), P(8,0), FONT_LAST },
+  ['3' - 0x20] = { P(0,12), P(8,12), P(8,0), P(0,0), FONT_UP, P(0,6), P(8,6), FONT_LAST },
+  ['4' - 0x20] = { P(0,12), P(0,6), P(8,6), FONT_UP, P(8,12), P(8,0), FONT_LAST },
+  ['5' - 0x20] = { P(0,0), P(8,0), P(8,6), P(0,7), P(0,12), P(8,12), FONT_LAST },
+  ['6' - 0x20] = { P(0,12), P(0,0), P(8,0), P(8,5), P(0,7), FONT_LAST },
+  ['7' - 0x20] = { P(0,12), P(8,12), P(8,6), P(4,0), FONT_LAST },
+  ['8' - 0x20] = { P(0,0), P(8,0), P(8,12), P(0,12), P(0,0), FONT_UP, P(0,6), P(8,6), },
+  ['9' - 0x20] = { P(8,0), P(8,12), P(0,12), P(0,7), P(8,5), FONT_LAST },
+  [' ' - 0x20] = { FONT_LAST },
+  ['.' - 0x20] = { P(3,0), P(4,0), FONT_LAST },
+  [',' - 0x20] = { P(2,0), P(4,2), FONT_LAST },
+  ['-' - 0x20] = { P(2,6), P(6,6), FONT_LAST },
+  ['+' - 0x20] = { P(1,6), P(7,6), FONT_UP, P(4,9), P(4,3), FONT_LAST },
+  ['!' - 0x20] = { P(4,0), P(3,2), P(5,2), P(4,0), FONT_UP, P(4,4), P(4,12), FONT_LAST },
+  ['#' - 0x20] = { P(0,4), P(8,4), P(6,2), P(6,10), P(8,8), P(0,8), P(2,10), P(2,2) },
+  ['^' - 0x20] = { P(2,6), P(4,12), P(6,6), FONT_LAST },
+  ['=' - 0x20] = { P(1,4), P(7,4), FONT_UP, P(1,8), P(7,8), FONT_LAST },
+  ['*' - 0x20] = { P(0,0), P(4,12), P(8,0), P(0,8), P(8,8), P(0,0), FONT_LAST },
+  ['_' - 0x20] = { P(0,0), P(8,0), FONT_LAST },
+  ['/' - 0x20] = { P(0,0), P(8,12), FONT_LAST },
+  ['\\' - 0x20] = { P(0,12), P(8,0), FONT_LAST },
+  ['@' - 0x20] = { P(8,4), P(4,0), P(0,4), P(0,8), P(4,12), P(8,8), P(4,4), P(3,6) },
+  ['$' - 0x20] = { P(6,2), P(2,6), P(6,10), FONT_UP, P(4,12), P(4,0), FONT_LAST },
+  ['&' - 0x20] = { P(8,0), P(4,12), P(8,8), P(0,4), P(4,0), P(8,4), FONT_LAST },
+  ['[' - 0x20] = { P(6,0), P(2,0), P(2,12), P(6,12), FONT_LAST },
+  [']' - 0x20] = { P(2,0), P(6,0), P(6,12), P(2,12), FONT_LAST },
+  ['(' - 0x20] = { P(6,0), P(2,4), P(2,8), P(6,12), FONT_LAST },
+  [')' - 0x20] = { P(2,0), P(6,4), P(6,8), P(2,12), FONT_LAST },
+  ['{' - 0x20] = { P(6,0), P(4,2), P(4,10), P(6,12), FONT_UP, P(2,6), P(4,6), FONT_LAST },
+  ['}' - 0x20] = { P(4,0), P(6,2), P(6,10), P(4,12), FONT_UP, P(6,6), P(8,6), FONT_LAST },
+  ['%' - 0x20] = { P(0,0), P(8,12), FONT_UP, P(2,10), P(2,8), FONT_UP, P(6,4), P(6,2) },
+  ['<' - 0x20] = { P(6,0), P(2,6), P(6,12), FONT_LAST },
+  ['>' - 0x20] = { P(2,0), P(6,6), P(2,12), FONT_LAST },
+  ['|' - 0x20] = { P(4,0), P(4,5), FONT_UP, P(4,6), P(4,12), FONT_LAST },
+  [':' - 0x20] = { P(4,9), P(4,7), FONT_UP, P(4,5), P(4,3), FONT_LAST },
+  [';' - 0x20] = { P(4,9), P(4,7), FONT_UP, P(4,5), P(1,2), FONT_LAST },
+  ['"' - 0x20] = { P(2,10), P(2,6), FONT_UP, P(6,10), P(6,6), FONT_LAST },
+  ['\'' - 0x20] = { P(2,6), P(6,10), FONT_LAST },
+  ['`' - 0x20] = { P(2,10), P(6,6), FONT_LAST },
+  ['~' - 0x20] = { P(0,4), P(2,8), P(6,4), P(8,8), FONT_LAST },
+  ['?' - 0x20] = { P(0,8), P(4,12), P(8,8), P(4,4), FONT_UP, P(4,1), P(4,0), FONT_LAST },
+  ['A' - 0x20] = { P(0,0), P(0,8), P(4,12), P(8,8), P(8,0), FONT_UP, P(0,4), P(8,4) },
+  ['B' - 0x20] = { P(0,0), P(0,12), P(4,12), P(8,10), P(4,6), P(8,2), P(4,0), P(0,0) },
+  ['C' - 0x20] = { P(8,0), P(0,0), P(0,12), P(8,12), FONT_LAST },
+  ['D' - 0x20] = { P(0,0), P(0,12), P(4,12), P(8,8), P(8,4), P(4,0), P(0,0), FONT_LAST },
+  ['E' - 0x20] = { P(8,0), P(0,0), P(0,12), P(8,12), FONT_UP, P(0,6), P(6,6), FONT_LAST },
+  ['F' - 0x20] = { P(0,0), P(0,12), P(8,12), FONT_UP, P(0,6), P(6,6), FONT_LAST },
+  ['G' - 0x20] = { P(6,6), P(8,4), P(8,0), P(0,0), P(0,12), P(8,12), FONT_LAST },
+  ['H' - 0x20] = { P(0,0), P(0,12), FONT_UP, P(0,6), P(8,6), FONT_UP, P(8,12), P(8,0) },
+  ['I' - 0x20] = { P(0,0), P(8,0), FONT_UP, P(4,0), P(4,12), FONT_UP, P(0,12), P(8,12) },
+  ['J' - 0x20] = { P(0,4), P(4,0), P(8,0), P(8,12), FONT_LAST },
+  ['K' - 0x20] = { P(0,0), P(0,12), FONT_UP, P(8,12), P(0,6), P(6,0), FONT_LAST },
+  ['L' - 0x20] = { P(8,0), P(0,0), P(0,12), FONT_LAST },
+  ['M' - 0x20] = { P(0,0), P(0,12), P(4,8), P(8,12), P(8,0), FONT_LAST },
+  ['N' - 0x20] = { P(0,0), P(0,12), P(8,0), P(8,12), FONT_LAST },
+  ['O' - 0x20] = { P(0,0), P(0,12), P(8,12), P(8,0), P(0,0), FONT_LAST },
+  ['P' - 0x20] = { P(0,0), P(0,12), P(8,12), P(8,6), P(0,5), FONT_LAST },
+  ['Q' - 0x20] = { P(0,0), P(0,12), P(8,12), P(8,4), P(0,0), FONT_UP, P(4,4), P(8,0) },
+  ['R' - 0x20] = { P(0,0), P(0,12), P(8,12), P(8,6), P(0,5), FONT_UP, P(4,5), P(8,0) },
+  ['S' - 0x20] = { P(0,2), P(2,0), P(8,0), P(8,5), P(0,7), P(0,12), P(6,12), P(8,10) },
+  ['T' - 0x20] = { P(0,12), P(8,12), FONT_UP, P(4,12), P(4,0), FONT_LAST },
+  ['U' - 0x20] = { P(0,12), P(0,2), P(4,0), P(8,2), P(8,12), FONT_LAST },
+  ['V' - 0x20] = { P(0,12), P(4,0), P(8,12), FONT_LAST },
+  ['W' - 0x20] = { P(0,12), P(2,0), P(4,4), P(6,0), P(8,12), FONT_LAST },
+  ['X' - 0x20] = { P(0,0), P(8,12), FONT_UP, P(0,12), P(8,0), FONT_LAST },
+  ['Y' - 0x20] = { P(0,12), P(4,6), P(8,12), FONT_UP, P(4,6), P(4,0), FONT_LAST },
+  ['Z' - 0x20] = { P(0,12), P(8,12), P(0,0), P(8,0), FONT_UP, P(2,6), P(6,6), FONT_LAST },
+};
+
+////
+
+static int frame = 0;
+
+void draw_char(char ch) {
+  const uint8_t* p = vecfont[ch-0x20];
+  bool bright = false;
+  uint8_t x = 0;
+    uint8_t y = 0;
+    uint8_t i;
+  for (i=0; i<8; i++) {
+      uint8_t b = *p++;
+    if (b == FONT_LAST) break; // last move
+    else if (b == FONT_UP) bright = false; // pen up
+    else {
+      uint8_t x2 = b>>4;
+        uint8_t y2 = b&15;
+      // draw line 
+      // SVEC((char)(x2-x), (char)(y2-y), bright);
+      bright = true;
+      x = x2;
+      y = y2;
+    }
+  }
+  // line to
+    // SVEC((char)12-x, (char)-y, 0);
+}
+
+void draw_string(const char* str, bool spacing) {
+  while (*str) {
+    draw_char(*str++);
+    if (spacing) {
+        // move cursor
+        //SVEC(spacing, 0, 0);
+    }
+  }
+}
+
+
 
 } // end namespace lf_internal
 

@@ -20,6 +20,7 @@
 #define MTLFONTSTASH_H
 
 #import <Metal/Metal.h>
+#import <array>
 
 FONScontext* _Nullable mtlfonsCreate(id<MTLDevice> _Nonnull device, int width, int height, int flags);
 void mtlfonsSetRenderTargetPixelFormat(FONScontext* _Nonnull ctx, MTLPixelFormat pixelFormat);
@@ -28,6 +29,10 @@ void mtlfonsDelete(FONScontext* _Nonnull ctx);
 
 void mtlfonsDrawLine(FONScontext* _Nonnull stash, float x0, float y0, float x1, float y1);
 unsigned int mtlfonsRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a);
+void mtlfonsTriangleDrawBatch(FONScontext* _Nonnull ctx,
+                      id<MTLTexture> _Nonnull texture,
+                      const float* _Nonnull verts, const float* _Nonnull tcoords, const unsigned int* _Nonnull colors,
+                      int nverts);
 
 #endif
 
@@ -39,7 +44,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 // The length of the circular vertex attribute buffer shared by
 // glyphs rendered from this stash. 1MB equals about 3,000 glyphs.
-#define MTLFONS_BUFFER_LENGTH (1024 * 1024)
+#define MTLFONS_BUFFER_LENGTH (3 * 1024 * 1024)
 
 static NSString *shaderSource = @""
     "#include <metal_stdlib>\n"
@@ -70,10 +75,10 @@ static NSString *shaderSource = @""
     "typedef VertexOut FragmentIn;\n"
     "\n"
     "fragment half4 mtlfontstash_fragment(FragmentIn in [[stage_in]],\n"
-    "                                     texture2d<half, access::sample> atlasTexture [[texture(0)]])\n"
+    "                                     array<texture2d<half, access::sample>, 1> atlasTexture [[texture(0)]])\n"
     "{\n"
     "    constexpr sampler linearSampler(coord::normalized, filter::linear, address::clamp_to_edge);\n"
-    "    half mask = atlasTexture.sample(linearSampler, in.texCoords).r;\n"
+    "    half mask = atlasTexture[0].sample(linearSampler, in.texCoords).r;\n"
     "    half4 color = in.color * mask;\n"
     "    return color;\n"
     "}";
@@ -82,7 +87,7 @@ struct MTLFONScontext {
     id<MTLDevice> device;
     id<MTLRenderPipelineState> renderPipelineState;
     id<MTLBuffer> vertexBuffer;
-    id<MTLTexture> atlasTexture;
+    id<MTLTexture> _Nullable atlasTexture[1];
     id<MTLRenderCommandEncoder> currentRenderCommandEncoder;
     MTLViewport currentViewport;
     int currentVertexBufferOffset;
@@ -117,12 +122,13 @@ static int mtlfons__renderCreate(void* userPtr, int width, int height)
 {
     MTLFONScontext* mtl = (MTLFONScontext*)userPtr;
 
-    MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
-                                                                                          width:width
-                                                                                         height:height
-                                                                                      mipmapped:NO];
-    mtl->atlasTexture = [mtl->device newTextureWithDescriptor:descriptor];
-    if (mtl->atlasTexture == nil) {
+    MTLTextureDescriptor *descriptor = [MTLTextureDescriptor
+                   texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
+                                                width:width
+                                               height:height
+                                            mipmapped:NO];
+    mtl->atlasTexture[0] = [mtl->device newTextureWithDescriptor:descriptor];
+    if (mtl->atlasTexture[0] == nil) {
         return 0;
     }
     return 1;
@@ -139,14 +145,14 @@ static void mtlfons__renderUpdate(void* userPtr, int* rect, const unsigned char*
     int w = rect[2] - rect[0];
     int h = rect[3] - rect[1];
 
-    if (mtl->atlasTexture == nil) {
+    if (mtl->atlasTexture[0] == nil) {
         return;
     }
 
     MTLRegion region = MTLRegionMake2D(rect[0], rect[1], w, h);
-    int atlasWidth = (int)mtl->atlasTexture.width;
+    int atlasWidth = (int)mtl->atlasTexture[0].width;
     unsigned char const* regionData = (data + (rect[1] * atlasWidth)) + rect[0];
-    [mtl->atlasTexture replaceRegion:region mipmapLevel:0 withBytes:regionData bytesPerRow:atlasWidth];
+    [mtl->atlasTexture[0] replaceRegion:region mipmapLevel:0 withBytes:regionData bytesPerRow:atlasWidth];
 }
 
 static
@@ -205,7 +211,7 @@ id<MTLRenderPipelineState> _Nullable mtlfons__renderPipelineState(MTLFONScontext
 static void mtlfons__renderDraw(void* userPtr, const float* verts, const float* tcoords, const unsigned int* colors, int nverts)
 {
     MTLFONScontext* mtl = (MTLFONScontext*)userPtr;
-    if (mtl->atlasTexture == 0) {
+    if (mtl->atlasTexture[0] == 0) {
         return;
     }
 
@@ -235,7 +241,7 @@ static void mtlfons__renderDraw(void* userPtr, const float* verts, const float* 
                                                                0, 1);
     [renderCommandEncoder setVertexBytes:&projectionMatrix length:sizeof(simd_float4x4) atIndex:1];
 
-    [renderCommandEncoder setFragmentTexture:mtl->atlasTexture atIndex:0];
+    [renderCommandEncoder setFragmentTextures:mtl->atlasTexture withRange:NSMakeRange(0, 1)];
 
     [renderCommandEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:nverts];
 
@@ -245,7 +251,7 @@ static void mtlfons__renderDraw(void* userPtr, const float* verts, const float* 
 static void mtlfons__renderDelete(void* userPtr)
 {
     MTLFONScontext* mtl = (MTLFONScontext*)userPtr;
-    mtl->atlasTexture = nil;
+    mtl->atlasTexture[0] = nil;
     free(mtl);
 }
 
@@ -304,7 +310,7 @@ unsigned int mtlfonsRGBA(unsigned char r, unsigned char g, unsigned char b, unsi
 
 void mtlfonsDrawLine(FONScontext* _Nonnull ctx, float x0, float y0, float x1, float y1) {
     MTLFONScontext* mtl = (MTLFONScontext *)ctx->params.userPtr;
-    if (mtl->atlasTexture == 0) {
+    if (mtl->atlasTexture[0] == 0) {
         return;
     }
 
@@ -326,9 +332,50 @@ void mtlfonsDrawLine(FONScontext* _Nonnull ctx, float x0, float y0, float x1, fl
                                                                0, 1);
     [renderCommandEncoder setVertexBytes:&projectionMatrix length:sizeof(simd_float4x4) atIndex:1];
 
-    [renderCommandEncoder setFragmentTexture:mtl->atlasTexture atIndex:0];
+    
+    [renderCommandEncoder setFragmentTextures:mtl->atlasTexture
+                                     withRange:NSMakeRange(0, 1)];
 
     [renderCommandEncoder drawPrimitives:MTLPrimitiveTypeLine vertexStart:0 vertexCount:2];
+}
+
+void mtlfonsDrawTriangleBatch(FONScontext* _Nonnull ctx, id<MTLTexture> texture,
+                      const float* verts, const float* tcoords, const unsigned int* colors,
+                      int nverts)
+{
+    MTLFONScontext* mtl = (MTLFONScontext *)ctx->params.userPtr;
+    if (texture == nil) {
+        return;
+    }
+
+    id<MTLRenderCommandEncoder> renderCommandEncoder = mtl->currentRenderCommandEncoder;
+
+    id<MTLRenderPipelineState> pipelineState = mtlfons__renderPipelineState(mtl);
+    [renderCommandEncoder setRenderPipelineState:pipelineState];
+
+    int bufferLength = sizeof(MTLFONSvertex) * nverts;
+    if (mtl->currentVertexBufferOffset + bufferLength > MTLFONS_BUFFER_LENGTH) {
+        // Wrap the vertex buffer to the beginning, treating it as a circular buffer.
+        mtl->currentVertexBufferOffset = 0;
+    }
+
+    MTLFONSvertex *vertexData = (MTLFONSvertex*) ((uint8_t*) mtl->vertexBuffer.contents + mtl->currentVertexBufferOffset);
+    for (int i = 0; i < nverts; ++i) {
+        memcpy(&vertexData[i].x, &verts[i * 2], sizeof(float) * 2);
+        memcpy(&vertexData[i].tx, &tcoords[i * 2], sizeof(float) * 2);
+        memcpy(&vertexData[i].rgba, &colors[i], sizeof(unsigned int));
+    }
+
+    [renderCommandEncoder setVertexBuffer:mtl->vertexBuffer offset:mtl->currentVertexBufferOffset atIndex:0];
+
+    MTLViewport viewport = mtl->currentViewport;
+    simd_float4x4 projectionMatrix = float4x4_ortho_projection(viewport.originX, viewport.originY,
+                                                               viewport.width, viewport.height,
+                                                               0, 1);
+    [renderCommandEncoder setVertexBytes:&projectionMatrix length:sizeof(simd_float4x4) atIndex:1];
+    [renderCommandEncoder setFragmentTexture:texture atIndex:0];
+    [renderCommandEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:nverts];
+    mtl->currentVertexBufferOffset += bufferLength; // todo: align up
 }
 
 NS_ASSUME_NONNULL_END

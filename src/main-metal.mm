@@ -9,7 +9,7 @@
 #include <stddef.h>
 
 #include "fontstash.h"
-#include "mtlfontstash.h"
+//#include "mtlfontstash.h"
 
 #define LABIMMDRAW_IMPL
 #include "../LabDrawImmediate.h"
@@ -29,12 +29,8 @@ void fontDemo(LabFontDrawState* ds, float& dx, float& dy, float sx, float sy);
 void font_demo_init(const char* path_);
 
 
-unsigned int packRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a) {
-    return (r) | (g << 8) | (b << 16) | (a << 24);
-}
-
 void line(FONScontext *stash, float sx, float sy, float ex, float ey) {
-    mtlfonsDrawLine(stash, sx, sy, ex, ey);//, packRGBA(0, 0, 0, 255));
+   // mtlfonsDrawLine(stash, sx, sy, ex, ey);//, packRGBA(0, 0, 0, 255));
 }
 
 void dash(FONScontext *stash, float dx, float dy) {
@@ -42,6 +38,27 @@ void dash(FONScontext *stash, float dx, float dy) {
 }
 
 std::string g_app_path;
+static LabFontState* microui_font_bake = nullptr;
+
+
+
+typedef struct {
+    float r, g, b;
+} color_t;
+
+static struct {
+    mu_Context* mu_ctx = nullptr;
+    char logbuf[64000];
+    int logbuf_updated;
+    color_t bg = { 90.f, 95.f, 100.f };
+    float dpi_scale;
+
+    mu_Id zep_id;
+} state;
+
+static LabZep* zep = nullptr;
+
+
 
 
 @interface MetalView : NSView
@@ -61,8 +78,6 @@ std::string g_app_path;
 @end
 
 
-
-
 @implementation MetalView
 
 - (instancetype)initWithFrame:(NSRect)frameRect {
@@ -80,7 +95,7 @@ std::string g_app_path;
 }
 
 - (void)dealloc {
-    mtlfonsDelete(fs);
+    //mtlfonsDelete(fs);
     [super dealloc];
 }
 
@@ -98,7 +113,10 @@ std::string g_app_path;
     self.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
     self.layer = [self makeBackingLayer];
 
-    LabFontInitMetal(self.device, self.colorPixelFormat);
+    // font atlas size 1024x1024
+    self->imm_ctx = LabImmDrawContextCreate(self.device, 1024, 1024);
+
+    LabFontInitMetal(self->imm_ctx, self.colorPixelFormat);
 
     const char* rsrc_str = lab_application_resource_path(g_app_path.c_str(),
                                                          "share/lab_font_demo");
@@ -108,83 +126,9 @@ std::string g_app_path;
     }
     std::string rsrc(rsrc_str);
 
-    self->imm_ctx = LabImmDrawContextCreate(self.device);
     LabImmDrawSetRenderTargetPixelFormat(self->imm_ctx, MTLPixelFormatBGRA8Unorm);
 
     font_demo_init(rsrc.c_str());
-    if (false) {
-        /*            __  */
-        /*  _ __ ___ / _| */
-        /* | '__/ _ \ |_  */
-        /* | | |  __/  _| */
-        /* |_|  \___|_|   */
-
-        fs = mtlfonsCreate(self.device, 1024, 512, FONS_ZERO_TOPLEFT);
-        if (fs == NULL) {
-            printf("Could not create stash.\n");
-        }
-
-
-        FILE* ffile;
-        size_t sz;
-        uint8_t* fdata;
-        ffile = fopen((rsrc + "/DroidSerif-Regular.ttf").c_str(), "rb");
-        fseek(ffile, 0, SEEK_END);
-        sz = ftell(ffile);
-        fseek(ffile, 0, SEEK_SET);
-        fdata = (uint8_t*) malloc(sz);
-        fread(fdata, sz, 1, ffile);
-        fclose(ffile);
-        fontNormal = fonsAddFontMem(fs, "sans", fdata, sz, 1);
-        if (fontNormal == FONS_INVALID) {
-            printf("Could not add font normal.\n");
-        }
-
-        ffile = fopen((rsrc + "/DroidSerif-Italic.ttf").c_str(), "rb");
-        fseek(ffile, 0, SEEK_END);
-        sz = ftell(ffile);
-        fseek(ffile, 0, SEEK_SET);
-        fdata = (uint8_t*) malloc(sz);
-        fread(fdata, sz, 1, ffile);
-        fclose(ffile);
-        fontItalic = fonsAddFontMem(fs, "sans-italic", fdata, sz, 1);
-        if (fontItalic == FONS_INVALID) {
-            printf("Could not add font italic.\n");
-        }
-
-        ffile = fopen((rsrc + "/DroidSerif-Bold.ttf").c_str(), "rb");
-        fseek(ffile, 0, SEEK_END);
-        sz = ftell(ffile);
-        fseek(ffile, 0, SEEK_SET);
-        fdata = (uint8_t*) malloc(sz);
-        fread(fdata, sz, 1, ffile);
-        fclose(ffile);
-        fontBold = fonsAddFontMem(fs, "sans-bold", fdata, sz, 1);
-        if (fontBold == FONS_INVALID) {
-            printf("Could not add font bold.\n");
-        }
-
-        ffile = fopen((rsrc + "/DroidSansJapanese.ttf").c_str(), "rb");
-        fseek(ffile, 0, SEEK_END);
-        sz = ftell(ffile);
-        fseek(ffile, 0, SEEK_SET);
-        fdata = (uint8_t*) malloc(sz);
-        fread(fdata, sz, 1, ffile);
-        fclose(ffile);
-        fontJapanese = fonsAddFontMem(fs, "sans-jp", fdata, sz, 1);
-        if (fontJapanese == FONS_INVALID) {
-            printf("Could not add font japanese.\n");
-        }
-
-        mtlfonsSetRenderTargetPixelFormat(fs, self.colorPixelFormat);
-
-
-        /*            __  */
-        /*  _ __ ___ / _| */
-        /* | '__/ _ \ |_  */
-        /* | | |  __/  _| */
-        /* |_|  \___|_|   */
-    }
 }
 
 - (void)viewDidMoveToWindow {
@@ -233,6 +177,7 @@ std::string g_app_path;
     int width = drawableSize.width, height = drawableSize.height;
 
     LabFontDrawBeginMetal(renderCommandEncoder);
+    LabImmDrawSetRenderCommandEnconder(self->imm_ctx, renderCommandEncoder);
     auto ds = LabFontDrawBegin(0, 0, width, height);
 
     float dx = 0;
@@ -241,14 +186,13 @@ std::string g_app_path;
     float sy = 150;
     fontDemo(ds, dx, dy, sx, sy);
 
-    LabImmDrawSetRenderCommandEnconder(self->imm_ctx, renderCommandEncoder);
     LabImmDrawSetViewport(self->imm_ctx, 0, 0, width, height);
     size_t buff_size = lab_imm_size_bytes(256);
     float* buff = (float*) malloc(buff_size);
     LabImmContext lic;
     lab_imm_begin(&lic, 256, labprim_linestrip, false, buff);
 
-    lab_imm_c4f(&lic, 0.f, 0.f, 1.f, 1.f);
+    lab_imm_c4f(&lic, 1.f, 1.f, 0.f, 1.f);
     for (int i = 0; i < 256; ++i) {
         float th = 6.282f * (float) i / 256.f;
         float s = sinf(th);
@@ -256,154 +200,28 @@ std::string g_app_path;
         lab_imm_v2f(&lic, 250 + 150 * s, 250 + 150 * c);
     }
 
-    LabImmDrawBatch(self->imm_ctx, &lic);
+    // texture slot 1 ~~ solid color
+    LabImmDrawBatch(self->imm_ctx, 1, &lic);
     free(buff);
 
-    if (false) {
-        /*            __  */
-        /*  _ __ ___ / _| */
-        /* | '__/ _ \ |_  */
-        /* | | |  __/  _| */
-        /* |_|  \___|_|   */
-
-        MTLViewport viewport = {
-            .originX = 0, .originY = 0,
-            .height = static_cast<double>(height), .width = static_cast<double>(width) };
-        mtlfonsSetRenderCommandEncoder(fs, renderCommandEncoder, viewport);
-
-        unsigned int white = mtlfonsRGBA(255,255,255,255);
-        unsigned int brown = mtlfonsRGBA(192,128,0,128);
-        unsigned int blue = mtlfonsRGBA(0,192,255,255);
-        unsigned int black = mtlfonsRGBA(0,0,0,255);
-
-        float lh = 0;
-        sx = 50; sy = 50;
-        dx = sx; dy = sy;
-
-        dash(fs, dx,dy);
-
-        fonsClearState(fs);
-
-        float scale = fmax(1, self.window.backingScaleFactor);
-
-        fonsSetSize(fs, scale * 124.0f);
-        fonsSetFont(fs, fontNormal);
-        fonsVertMetrics(fs, NULL, NULL, &lh);
-        dx = sx;
-        dy += lh;
-        dash(fs, dx,dy);
-
-        fonsSetSize(fs, scale * 124.0f);
-        fonsSetFont(fs, fontNormal);
-        fonsSetColor(fs, white);
-        dx = fonsDrawText(fs, dx,dy,"The quick ",NULL);
-
-        fonsSetSize(fs, scale * 48.0f);
-        fonsSetFont(fs, fontItalic);
-        fonsSetColor(fs, brown);
-        dx = fonsDrawText(fs, dx,dy,"brown ",NULL);
-
-        fonsSetSize(fs, scale * 24.0f);
-        fonsSetFont(fs, fontNormal);
-        fonsSetColor(fs, white);
-        dx = fonsDrawText(fs, dx,dy,"fox ",NULL);
-
-        fonsVertMetrics(fs, NULL, NULL, &lh);
-        dx = sx;
-        dy += lh*1.2f;
-        dash(fs, dx,dy);
-        fonsSetFont(fs, fontItalic);
-        dx = fonsDrawText(fs, dx,dy,"jumps over ",NULL);
-        fonsSetFont(fs, fontBold);
-        dx = fonsDrawText(fs, dx,dy,"the lazy ",NULL);
-        fonsSetFont(fs, fontNormal);
-        dx = fonsDrawText(fs, dx,dy,"dog.",NULL);
-
-        dx = sx;
-        dy += lh*1.2f;
-        dash(fs, dx,dy);
-        fonsSetSize(fs, scale * 12.0f);
-        fonsSetFont(fs, fontNormal);
-        fonsSetColor(fs, blue);
-        fonsDrawText(fs, dx,dy,"Now is the time for all good men to come to the aid of the party.",NULL);
-
-        fonsVertMetrics(fs, NULL,NULL,&lh);
-        dx = sx;
-        dy += lh*1.2f*2;
-        dash(fs, dx,dy);
-        fonsSetSize(fs, scale * 18.0f);
-        fonsSetFont(fs, fontItalic);
-        fonsSetColor(fs, white);
-        fonsDrawText(fs, dx,dy,"Ég get etið gler án þess að meiða mig.",NULL);
-
-        fonsVertMetrics(fs, NULL,NULL,&lh);
-        dx = sx;
-        dy += lh*1.2f;
-        dash(fs, dx,dy);
-        fonsSetFont(fs, fontJapanese);
-        fonsDrawText(fs, dx,dy,"いろはにほへと ちりぬるを わかよたれそ つねならむ うゐのおくやま けふこえて あさきゆめみし ゑひもせす　京（ん）",NULL);
-
-        // Font alignment
-        fonsSetSize(fs, scale * 18.0f);
-        fonsSetFont(fs, fontNormal);
-        fonsSetColor(fs, white);
-
-        dx = scale * 50; dy = scale * 350;
-        line(fs, dx-10,dy,dx+scale * 250,dy);
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_TOP);
-        dx = fonsDrawText(fs, dx,dy,"Top",NULL);
-        dx += scale * 10;
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_MIDDLE);
-        dx = fonsDrawText(fs, dx,dy,"Middle",NULL);
-        dx += scale * 10;
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
-        dx = fonsDrawText(fs, dx,dy,"Baseline",NULL);
-        dx += scale * 10;
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BOTTOM);
-        fonsDrawText(fs, dx,dy,"Bottom",NULL);
-
-        dx = scale * 150; dy = scale * 400;
-        line(fs, dx,dy-scale * 30,dx,dy+scale * 80.0f);
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
-        fonsDrawText(fs, dx,dy,"Left",NULL);
-        dy += scale * 30;
-        fonsSetAlign(fs, FONS_ALIGN_CENTER | FONS_ALIGN_BASELINE);
-        fonsDrawText(fs, dx,dy,"Center",NULL);
-        dy += scale * 30;
-        fonsSetAlign(fs, FONS_ALIGN_RIGHT | FONS_ALIGN_BASELINE);
-        fonsDrawText(fs, dx,dy,"Right",NULL);
-
-        // Blur
-        dx = scale * 500; dy = scale * 350;
-        fonsSetAlign(fs, FONS_ALIGN_LEFT | FONS_ALIGN_BASELINE);
-
-        fonsSetSize(fs, scale * 60.0f);
-        fonsSetFont(fs, fontItalic);
-        fonsSetColor(fs, white);
-        fonsSetSpacing(fs, scale * 5.0f);
-        fonsSetBlur(fs, scale * 10.0f);
-        fonsDrawText(fs, dx,dy,"Blurry...",NULL);
-
-        dy += scale * 50.0f;
-
-        fonsSetSize(fs, scale * 18.0f);
-        fonsSetFont(fs, fontBold);
-        fonsSetColor(fs, black);
-        fonsSetSpacing(fs, 0.0f);
-        fonsSetBlur(fs, scale * 3.0f);
-        fonsDrawText(fs, dx,dy+(scale * 2),"DROP THAT SHADOW",NULL);
-
-        fonsSetColor(fs, white);
-        fonsSetBlur(fs, 0);
-        fonsDrawText(fs, dx,dy,"DROP THAT SHADOW",NULL);
+    // microui layer
+    if (!state.mu_ctx) {
+        state.mu_ctx = lab_microui_init(microui_font_bake);
     }
+    if (state.mu_ctx) {
+        /* UI definition */
+        mu_begin(state.mu_ctx);
+        microui_test_window(state.mu_ctx);
+        log_window(state.mu_ctx);
+        //zep_window(state.mu_ctx);
+        microui_style_window(state.mu_ctx);
+        mu_end(state.mu_ctx);
 
-/*            __  */
-/*  _ __ ___ / _| */
-/* | '__/ _ \ |_  */
-/* | | |  __/  _| */
-/* |_|  \___|_|   */
-
+        lab_microui_render(ds, width, height, zep);
+    }
+    
+    LabFontDrawEnd(ds);
+    
     [renderCommandEncoder endEncoding];
     [commandBuffer presentDrawable:drawable];
     [commandBuffer commit];
@@ -438,17 +256,45 @@ std::string g_app_path;
         keyEquivalent:@"q"];
     [app_menu addItem:quit_menu_item];
     app_menu_item.submenu = app_menu;
-    
+
     // create a window
+
+    const NSUInteger style =
+        NSWindowStyleMaskTitled |
+        NSWindowStyleMaskClosable |
+        NSWindowStyleMaskMiniaturizable |
+        NSWindowStyleMaskResizable;
+    
     NSRect win_sz = NSMakeRect(0, 0, 1024, 768);
     NSWindow* window = [[NSWindow alloc] initWithContentRect:win_sz
-                                            styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+                                                   styleMask:style
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:NO];
     [window cascadeTopLeftFromPoint:NSMakePoint(20,20)];
     [window setTitle:appName];
     [window makeKeyAndOrderFront:nil];
+    window.releasedWhenClosed = NO; // clean up will occur in applicationWillTerminate
+    window.acceptsMouseMovedEvents = YES;
+    window.restorable = YES;
+
+
     
     id view = [[MetalView alloc] initWithFrame:win_sz];
     [[window contentView] addSubview:view];
+
+    //-------------------------------------------------------------------------
+    const char* rsrc_str = lab_application_resource_path(g_app_path.c_str(),
+                                                         "share/lab_font_demo");
+    
+    static std::string asset_root(rsrc_str);
+    static std::string r18_path = asset_root + "/hauer-12.png";// "/robot-18.png";
+    static LabFont* font_robot18 = LabFontLoad("robot-18", r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });
+    int fontPixelHeight = 18;
+    microui_font_bake = LabFontStateBake(font_robot18,
+        (float)fontPixelHeight, { {255, 255, 255, 255} },
+        LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
+    //-------------------------------------------------------------------------
+
 }
 
 @end
@@ -501,24 +347,6 @@ void main()
 )R";
 
 
-
-typedef struct {
-    float r, g, b;
-} color_t;
-
-static struct {
-    mu_Context* mu_ctx = nullptr;
-    char logbuf[64000];
-    int logbuf_updated;
-    color_t bg = { 90.f, 95.f, 100.f };
-    float dpi_scale;
-
-    mu_Id zep_id;
-} state;
-
-static LabZep* zep = nullptr;
-
-
 static void zep_window(mu_Context* ctx) 
 {
     if (mu_begin_window_ex(ctx, "Zep", mu_rect(100, 100, 800, 600), MU_OPT_NOFRAME)) {
@@ -562,7 +390,6 @@ static void init()
         exit(0);
     }
     static std::string asset_root(dir);
-
     static std::string r18_path = asset_root + "/hauer-12.png";// "/robot-18.png";
     static LabFont* font_robot18 = LabFontLoad("robot-18", r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });
 
@@ -756,6 +583,10 @@ int main(int argc, const char * argv[]) {
     NSApplication * application = [NSApplication sharedApplication];
     AppDelegate * appDelegate = [[AppDelegate alloc] init];
     [application setDelegate:appDelegate];
+
+    NSApp.activationPolicy = NSApplicationActivationPolicyRegular;
+    [NSApp activateIgnoringOtherApps:YES];
+    [NSEvent setMouseCoalescingEnabled:NO];
     [application run];
     return EXIT_SUCCESS;
 }

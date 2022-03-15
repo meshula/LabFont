@@ -12,7 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 struct LabFontState;
 
 extern "C" void r_begin(LabFontDrawState*, 
@@ -27,85 +26,26 @@ extern "C" void r_draw_icon(int id, mu_Rect rect, mu_Color color);
 extern "C" int r_get_text_width(const char* text, int len);
 extern "C" int r_get_text_height(void);
 extern "C" void r_set_clip_rect(mu_Rect rect);
-//extern "C" void r_clear(mu_Color color);
-//extern "C" void r_present();
 
 
-#if 1
-#else
-#include "atlas.inl"
-#endif
+/*== microui renderer =========================================================*/
 
-/*== micrui renderer =========================================================*/
-#ifdef LABFONT_HAVE_SOKOL
-static sg_image atlas_img;
-static sgl_pipeline pip;
-#endif
 LabFontState* font = nullptr;
 static LabFontSize font_size;
 
 extern "C"
 void r_init(LabFontState * font_) {
-
     font = font_;
     font_size = LabFontMeasure("", font_);
-#if 1
-#else
-    /* atlas image data is in atlas.inl file, this only contains alpha
-       values, need to expand this to RGBA8
-    */
-    uint32_t rgba8_size = ATLAS_WIDTH * ATLAS_HEIGHT * 4;
-    uint32_t* rgba8_pixels = (uint32_t*)malloc(rgba8_size);
-    for (int y = 0; y < ATLAS_HEIGHT; y++) {
-        for (int x = 0; x < ATLAS_WIDTH; x++) {
-            int index = y * ATLAS_WIDTH + x;
-            rgba8_pixels[index] = 0x00FFFFFF | ((uint32_t)atlas_texture[index] << 24);
-        }
-    }
-    atlas_img = sg_make_image(&(sg_image_desc) {
-        .width = ATLAS_WIDTH,
-            .height = ATLAS_HEIGHT,
-            /* LINEAR would be better for text quality in HighDPI, but the
-               atlas texture is "leaking" from neighbouring pixels unfortunately
-            */
-            .min_filter = SG_FILTER_NEAREST,
-            .mag_filter = SG_FILTER_NEAREST,
-            .data = {
-                .subimage[0][0] = {
-                    .ptr = rgba8_pixels,
-                    .size = rgba8_size
-                }
-        }
-    });
-    pip = sgl_make_pipeline(&(sg_pipeline_desc) {
-        .colors[0].blend = {
-            .enabled = true,
-            .src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA,
-            .dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA
-        }
-    });
-
-    free(rgba8_pixels);
-#endif
 }
 
 extern "C"
-void r_begin(LabFontDrawState* ds, int disp_width, int disp_height) {
-#ifdef LABFONT_HAVE_SOKOL
-    sgl_defaults();
-    sgl_matrix_mode_projection();
-    sgl_push_matrix();
-    sgl_ortho(0.0f, (float)disp_width, (float)disp_height, 0.0f, -1.0f, +1.0f);
-#else
-#endif
+void r_begin(LabFontDrawState* ds, int width, int height) {
+   // LabImmDrawSetViewport(self->imm_ctx, 0, 0, width, height);
 }
 
 extern "C"
 void r_end(void) {
-#ifdef LABFONT_HAVE_SOKOL
-    sgl_pop_matrix();
-#else
-#endif
 }
 
 extern "C"

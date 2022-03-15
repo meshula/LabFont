@@ -1,9 +1,11 @@
 
 //-----------------------------------------------------------------------------
 // LabDrawImmediate-metal.h
+// Copyright (c) 2022 Nick Porcino
 //
 // This file is heavily modified from mtlfontstash by Warren Moore.
-// Modifications are (c) 2022 Nick Porcino, and continue the use of the
+// All the new stuff, and modifications are (c) 2022 Nick Porcino, 
+// and continue the use of the
 // zlib license, which appears on the original source code and is 
 // reproduced below with the copyright notice for the original code.
 //-----------------------------------------------------------------------------
@@ -30,15 +32,27 @@
 #import "LabDrawImmediate.h"
 #import <Metal/Metal.h>
 
-typedef struct {
+inline
+unsigned int packRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
+{
+    return (r) | (g << 8) | (b << 16) | (a << 24);
+}
+
+#define ATLAS_SLOT_MAX 3
+
+struct FONSContext;
+typedef struct FONSContext FONSContext;
+
+typedef struct LabImmDrawContext {
     _Nullable id<MTLDevice> device;
     _Nullable id<MTLRenderPipelineState> renderPipelineState;
     _Nullable id<MTLBuffer> vertexBuffer;
-    _Nullable id<MTLTexture> atlasTexture;
+    _Nullable id<MTLTexture> atlasTexture[ATLAS_SLOT_MAX];
     _Nullable id<MTLRenderCommandEncoder> currentRenderCommandEncoder;
     MTLViewport viewport;
     int currentVertexBufferOffset;
     MTLPixelFormat pixelFormat;
+    FONScontext* _Nullable fonsContext;
 } LabImmDrawContext;
 
 
@@ -46,7 +60,8 @@ typedef struct {
 // context management
 LabImmDrawContext* _Nullable 
 LabImmDrawContextCreate(
-    id<MTLDevice> _Nonnull);
+    id<MTLDevice> _Nonnull,
+    int font_atlas_width, int font_atlas_height);
 
 void 
 LabImmDrawContextDestroy(
@@ -70,9 +85,12 @@ LabImmDrawLine(
     float x0, float y0, float x1, float y1);
 void LabImmDrawBatch(
     LabImmDrawContext* _Nonnull,
+    int texture_slot,
     LabImmContext* _Nonnull);
 void LabImmDrawArrays(
     LabImmDrawContext* _Nonnull,
+    int texture_slot,
+    LabPrim,
     const float* _Nonnull verts,
     const float* _Nonnull tcoords,
     const unsigned int* _Nonnull colors,
@@ -83,17 +101,18 @@ void LabImmDrawArrays(
 int
 LabImmCreateAtlas(
     LabImmDrawContext* _Nonnull,
-    int width, int height);
+    int slot, int width, int height);
 // given an in memory copy of the atlas, stored at data, Update will mark the
 // region from srcx, srcy to srcx+w, srcy+h as needing a GPU refresh
 void
 LabImmAtlasUpdate(
     LabImmDrawContext* _Nonnull,
-    int srcx, int srcy, int w, int h, const uint8_t* _Nonnull data);
+    int slot, int srcx, int srcy, int w, int h, const uint8_t* _Nonnull data);
 #endif
 
 #ifdef LABIMMDRAW_METAL_IMPLEMENTATION
 
+#include "fontstash.h"
 #import <simd/simd.h>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -130,11 +149,13 @@ static NSString *shaderSource = @""
     "\n"
     "typedef VertexOut FragmentIn;\n"
     "\n"
-    "fragment half4 mtlfontstash_fragment(FragmentIn in [[stage_in]],\n"
-    "                                     texture2d<half, access::sample> atlasTexture [[texture(0)]])\n"
+    "fragment half4 mtlfontstash_fragment(\n"
+    "                  FragmentIn in [[stage_in]],\n"
+    "                  constant int& texture_slot [[buffer(1)]],\n"
+    "                  array<texture2d<half, access::sample>,3> atlasTexture [[texture(0)]])\n"
     "{\n"
     "    constexpr sampler linearSampler(coord::normalized, filter::linear, address::clamp_to_edge);\n"
-    "    half mask = atlasTexture.sample(linearSampler, in.texCoords).r;\n"
+    "    half mask = atlasTexture[texture_slot].sample(linearSampler, in.texCoords).r;\n"
     "    half4 color = in.color * mask;\n"
     "    return color;\n"
     "}";
@@ -165,7 +186,8 @@ static simd_float4x4 float4x4_ortho_projection(float left, float top, float righ
 
 LabImmDrawContext* _Nullable 
 LabImmDrawContextCreate(
-    id<MTLDevice> _Nonnull device)
+    id<MTLDevice> _Nonnull device,
+    int font_atlas_width, int font_atlas_height)
 {
     LabImmDrawContext *mtl = (LabImmDrawContext*)calloc(1, sizeof(LabImmDrawContext));
     if (mtl == NULL) {
@@ -178,12 +200,65 @@ LabImmDrawContextCreate(
     mtl->vertexBuffer = [device newBufferWithLength:MTLFONS_BUFFER_LENGTH 
                                             options:MTLResourceStorageModeShared];
 
-    LabImmCreateAtlas(mtl, 4, 4);
+    // small white block in slot 1
+    LabImmCreateAtlas(mtl, 1, 4, 4);
     static uint8_t clear[16] = {
         0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,
         0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,
     };
-    LabImmAtlasUpdate(mtl, 0, 0, 4, 4, clear);
+    LabImmAtlasUpdate(mtl, 1, 0, 0, 4, 4, clear);
+
+    // set up fonstash to render through this immediate mode
+    FONSparams params;
+    memset(&params, 0, sizeof(params));
+    params.width = font_atlas_width;
+    params.height = font_atlas_height;
+    params.flags = (unsigned char)FONS_ZERO_TOPLEFT;
+    params.userPtr = mtl;
+
+    params.renderCreate = [](void* ptr, int width, int height) -> int {
+        LabImmDrawContext* mtl = (LabImmDrawContext*) ptr;
+        MTLTextureDescriptor *descriptor = [MTLTextureDescriptor
+                   texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
+                                                width:width
+                                               height:height
+                                            mipmapped:NO];
+        mtl->atlasTexture[2] = [mtl->device newTextureWithDescriptor:descriptor];
+        return mtl->atlasTexture[2] == nil ? 0 : 1;
+    };
+    params.renderResize = params.renderCreate;
+
+    params.renderUpdate = [](void* ptr, int* rect, const unsigned char* data) {
+        LabImmDrawContext* mtl = (LabImmDrawContext*) ptr;
+        int w = rect[2] - rect[0];
+        int h = rect[3] - rect[1];
+
+        if (mtl->atlasTexture[2] != nil) {
+            MTLRegion region = MTLRegionMake2D(rect[0], rect[1], w, h);
+            int atlasWidth = (int)mtl->atlasTexture[2].width;
+            unsigned char const* regionData = (data + (rect[1] * atlasWidth)) + rect[0];
+            [mtl->atlasTexture[2] replaceRegion:region 
+                                    mipmapLevel:0 
+                                    withBytes:regionData 
+                                    bytesPerRow:atlasWidth];
+        }
+    };
+
+    params.renderDraw = [](void* ptr, 
+        const float* verts, const float* tcoords, const unsigned int* colors, 
+        int nverts) {
+        LabImmDrawContext* mtl = (LabImmDrawContext*) ptr;
+        // fonstash texture atlas in slot 2
+        LabImmDrawArrays(mtl, 2, labprim_triangles,
+            verts, tcoords, colors, nverts);
+    };
+
+    // the atlas could be deleted on demand by fonstash, but there's no need,
+    // the atlas texture is managed by the LabImmDrawContext itself
+    params.renderDelete = [](void*) {};
+
+    mtl->fonsContext = fonsCreateInternal(&params);
+    
     return mtl;
 }
 
@@ -191,7 +266,8 @@ void LabImmDrawContextDestroy(LabImmDrawContext* _Nonnull mtl) {
     mtl->device = nil;
     mtl->renderPipelineState = nil;
     mtl->vertexBuffer = nil;
-    mtl->atlasTexture = nil;
+    for (int i = 0; i < ATLAS_SLOT_MAX; ++i)
+        mtl->atlasTexture[i] = nil;
     mtl->currentRenderCommandEncoder = nil;
     free(mtl);
 }
@@ -221,31 +297,31 @@ void LabImmDrawSetViewport(LabImmDrawContext* _Nonnull mtl,
 }
 
 
-int LabImmCreateAtlas(LabImmDrawContext* _Nonnull mtl, int width, int height)
+int LabImmCreateAtlas(LabImmDrawContext* _Nonnull mtl, int slot, int width, int height)
 {
     MTLTextureDescriptor *descriptor = 
         [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
                                                            width:width
                                                           height:height
                                                        mipmapped:NO];
-    mtl->atlasTexture = [mtl->device newTextureWithDescriptor:descriptor];
-    if (mtl->atlasTexture == nil) {
+    mtl->atlasTexture[slot] = [mtl->device newTextureWithDescriptor:descriptor];
+    if (mtl->atlasTexture[slot] == nil) {
         return 0;
     }
     return 1;
 }
 
 void LabImmAtlasUpdate(LabImmDrawContext* _Nonnull mtl, 
-    int srcx, int srcy, int w, int h, const uint8_t* data)
+    int slot, int srcx, int srcy, int w, int h, const uint8_t* data)
 {
-    if (mtl->atlasTexture == nil) {
+    if (mtl->atlasTexture[slot] == nil) {
         return;
     }
 
     MTLRegion region = MTLRegionMake2D(srcx, srcy, w, h);
-    int atlasWidth = (int)mtl->atlasTexture.width;
+    int atlasWidth = (int)mtl->atlasTexture[slot].width;
     unsigned char const* regionData = (data + (srcy * atlasWidth)) + srcx;
-    [mtl->atlasTexture replaceRegion:region 
+    [mtl->atlasTexture[slot] replaceRegion:region
                          mipmapLevel:0 
                            withBytes:regionData 
                          bytesPerRow:atlasWidth];
@@ -307,11 +383,12 @@ LabImmDraw__renderPipelineState(LabImmDrawContext* mtl)  {
 }
 
 void LabImmDrawArrays(LabImmDrawContext* mtl, 
+        int texture_slot,
         LabPrim prim,
         const float* verts, const float* tcoords, const unsigned int* colors, 
         int nverts)
 {
-    if (mtl->atlasTexture == 0 || !mtl->currentRenderCommandEncoder) {
+    if (mtl->atlasTexture[texture_slot] == 0 || !mtl->currentRenderCommandEncoder) {
         return;
     }
 
@@ -328,7 +405,7 @@ void LabImmDrawArrays(LabImmDrawContext* mtl,
 
     MTLFONSvertex *vertexData = 
         (MTLFONSvertex*) ((uint8_t*) mtl->vertexBuffer.contents +
-                mtl->currentVertexBufferOffset);
+                                     mtl->currentVertexBufferOffset);
     
     for (int i = 0; i < nverts; ++i) {
         memcpy(&vertexData[i].x, &verts[i * 2], sizeof(float) * 2);
@@ -355,7 +432,9 @@ void LabImmDrawArrays(LabImmDrawContext* mtl,
     }
     [renderCommandEncoder setVertexBytes:&projectionMatrix
                                   length:sizeof(simd_float4x4) atIndex:1];
-    [renderCommandEncoder setFragmentTexture:mtl->atlasTexture atIndex:0];
+    [renderCommandEncoder setFragmentBytes:&texture_slot
+                                  length:sizeof(int) atIndex:1];
+    [renderCommandEncoder setFragmentTextures:mtl->atlasTexture withRange:NSMakeRange(0,ATLAS_SLOT_MAX)];
     [renderCommandEncoder drawPrimitives:mtl_prim
                              vertexStart:0 vertexCount:nverts];
     mtl->currentVertexBufferOffset += bufferLength; // todo: align up
@@ -363,26 +442,29 @@ void LabImmDrawArrays(LabImmDrawContext* mtl,
 
 void LabImmDrawBatch(
     LabImmDrawContext* _Nonnull mtl,
+    int texture_slot,
     LabImmContext* _Nonnull batch)
 {
     if (!mtl || !batch || batch->interleaved ||
-        mtl->atlasTexture == 0 || !mtl->currentRenderCommandEncoder) 
+        mtl->atlasTexture[1] == 0 || !mtl->currentRenderCommandEncoder)
     {
         return;
     }
 
     if (!batch->interleaved) {
         LabImmDrawArrays(mtl, 
+            texture_slot,
             batch->prim, 
             batch->data_pos, batch->data_st, batch->data_rgba, batch->count); 
     }
 }
 
+
 void LabImmDrawLine(
         LabImmDrawContext* _Nonnull mtl,
         float x0, float y0, float x1, float y1) 
 {
-    if (mtl->atlasTexture == 0) {
+    if (mtl->atlasTexture[1] == 0) {
         return;
     }
 
@@ -392,8 +474,8 @@ void LabImmDrawLine(
     [renderCommandEncoder setRenderPipelineState:pipelineState];
 
     MTLFONSvertex vertexData[] = {
-        { .x = x0, .y = y0, .tx = 0, .ty = 0, .rgba = mtlfonsRGBA(0, 0, 0, 255) },
-        { .x = x1, .y = y1, .tx = 0, .ty = 0, .rgba = mtlfonsRGBA(0, 0, 0, 255) }
+        { .x = x0, .y = y0, .tx = 0, .ty = 0, .rgba = packRGBA(0, 0, 0, 255) },
+        { .x = x1, .y = y1, .tx = 0, .ty = 0, .rgba = packRGBA(0, 0, 0, 255) }
     };
 
     [renderCommandEncoder setVertexBytes:vertexData 
@@ -405,7 +487,7 @@ void LabImmDrawLine(
                                         viewport.width, viewport.height,
                                         0, 1);
     [renderCommandEncoder setVertexBytes:&projectionMatrix length:sizeof(simd_float4x4) atIndex:1];
-    [renderCommandEncoder setFragmentTexture:mtl->atlasTexture atIndex:0];
+    [renderCommandEncoder setFragmentTextures:mtl->atlasTexture withRange:NSMakeRange(0, ATLAS_SLOT_MAX)];
     [renderCommandEncoder drawPrimitives:MTLPrimitiveTypeLine vertexStart:0 vertexCount:2];
 }
 
