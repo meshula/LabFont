@@ -43,7 +43,6 @@ if (LABFONT_METAL)
         src/main-metal.mm
         src/LabFont-metal.mm
         src/lab_microui-metal.mm
-        src/mtlfontstash.h)
     set(ST_GFX_DEFS LABFONT_HAVE_METAL)
 endif()
 

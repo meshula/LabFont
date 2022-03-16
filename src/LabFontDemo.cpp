@@ -52,7 +52,7 @@ void fontDemo(LabFontDrawState* ds, float& dx, float& dy, float sx, float sy) {
     if (font_demo.font_japanese == nullptr)
         return;
 
-    float dpis = font_demo.dpi_scale;
+    float dpis = 1.f;//font_demo.dpi_scale;
     float sz;
 
     //-------------------------------------
