@@ -55,6 +55,7 @@ typedef struct LabImmDrawContext {
     int currentVertexBufferOffset;
     MTLPixelFormat pixelFormat;
     FONScontext* _Nullable fonsContext;
+    int next_texture_slot;
 } LabImmDrawContext;
 
 
@@ -274,7 +275,7 @@ LabImmDrawContextCreate(
     params.renderDelete = [](void*) {};
 
     mtl->fonsContext = fonsCreateInternal(&params);
-    
+    mtl->next_texture_slot = 2;
     return mtl;
 }
 

@@ -40,7 +40,8 @@ namespace lf_internal {
 typedef struct LabFont
 {
     id<MTLTexture> texture;
-
+    int texture_slot;
+    
     int id;           // >= zero for a TTF
 
     int img_w, img_h; // non-zero for a QuadPlay texture
@@ -340,12 +341,17 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
 
             r->texture = [LabFontInternal::_imm_ctx->device
                                 newTextureWithDescriptor:descriptor];
-
+            
             if (r->texture == nil) {
                 printf("Could not create a Metal texture of size %d x %d\n", x, y);
                 stbi_image_free(data);
+                free(r);
                 return nullptr;
             }
+
+            r->texture_slot = LabFontInternal::_imm_ctx->next_texture_slot;
+            LabFontInternal::_imm_ctx->atlasTexture[r->texture_slot] = r->texture;
+            ++LabFontInternal::_imm_ctx->next_texture_slot;
 
             [r->texture replaceRegion:MTLRegionMake2D(0, 0, x, y)
                           mipmapLevel:0
@@ -410,12 +416,15 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
         }
     }
     else if (type.type == LabFontTypeSokol8x8) {
-#ifdef LABFONT_HAVE_SOKOL
         using namespace lf_internal;
-        static bool pack = true;
+        static bool unpack = true;
         static uint8_t* texture = nullptr;
-        static sg_image font_img;
-        if (pack) {
+        LabFont* r = (LabFont*)calloc(1, sizeof(LabFont));
+        if (!r)
+        {
+            return nullptr;
+        }
+        if (unpack) {
             size_t sz = 2048 * 8 * 6;
             texture = (uint8_t*) malloc(sz);
             sokol8x8_unpack_font(sokol_font_kc853, 0, 0xff, texture + 2048 * 8 * 0);
@@ -425,33 +434,33 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
             sokol8x8_unpack_font(sokol_font_c64,   0, 0xff, texture + 2048 * 8 * 4);
             sokol8x8_unpack_font(sokol_font_oric,  0, 0xff, texture + 2048 * 8 * 5);
 
-            sg_image_desc img_desc;
-            memset(&img_desc, 0, sizeof(img_desc));
-            img_desc.width = 256 * 8;
-            img_desc.height = 6 * 8;
-            img_desc.num_slices = 1;
-            img_desc.pixel_format = SG_PIXELFORMAT_R8;
-            img_desc.min_filter = SG_FILTER_NEAREST;
-            img_desc.mag_filter = SG_FILTER_NEAREST;
-            img_desc.wrap_u = SG_WRAP_CLAMP_TO_EDGE;
-            img_desc.wrap_v = SG_WRAP_CLAMP_TO_EDGE;
-            img_desc.data.subimage[0][0].ptr = texture;
-            img_desc.data.subimage[0][0].size = sz;
-            font_img = sg_make_image(&img_desc);
-        }
-#endif
+            MTLTextureDescriptor *descriptor =
+                [MTLTextureDescriptor
+                    texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
+                                                 width: 256 * 8
+                                                height: 6 * 8
+                                             mipmapped:NO];
 
-        LabFont* r = (LabFont*)calloc(1, sizeof(LabFont));
-        if (!r)
-        {
-            return nullptr;
+            r->texture = [LabFontInternal::_imm_ctx->device
+                                newTextureWithDescriptor:descriptor];
+            
+            if (r->texture == nil) {
+                printf("Could not create a Metal texture of size %d x %d\n", 256 * 8, 6 * 8);
+                free(r);
+                return nullptr;
+            }
+
+            r->texture_slot = LabFontInternal::_imm_ctx->next_texture_slot;
+            ++LabFontInternal::_imm_ctx->next_texture_slot;
+
+            [r->texture replaceRegion:MTLRegionMake2D(0, 0, 256 * 8, 6 * 8)
+                          mipmapLevel:0
+                            withBytes:texture
+                          bytesPerRow:256 * 8];
         }
 
         r->id = -2;
-#ifdef LABFONT_HAVE_SOKOL
-        r->img = font_img;
-#endif
-        r->img_w = 2048;
+        r->img_w = 256 * 8;
         r->baseline = 7;
         r->charsz_x = 8;
         r->charsz_y = 8;
@@ -499,12 +508,11 @@ static void quadplay_font_init()
     qp_must_init = false;
 }
 
-#ifdef LABFONT_HAVE_SOKOL
-
-
 static float sokol_8x8_draw(const char* str, const char* end, 
         LabFontColor* c, float x, float y, LabFontState* fs)
 {
+    return 0;
+#if 0
     if (str == nullptr || fs == nullptr || fs->font->img.id <= 0)
         return x;
     if (end == nullptr)
@@ -573,8 +581,8 @@ static float sokol_8x8_draw(const char* str, const char* end,
     sgl_pop_pipeline();
     sgl_disable_texture();
     return x + kern + (idx * px);
-}
 #endif
+}
 
 static float quadplay_font_draw(const char* str, const char* end, 
         LabFontColor* c, float x, float y, LabFontState* fs)
@@ -667,13 +675,11 @@ static float quadplay_font_draw(const char* str, const char* end,
         kern += fs->font->kern[*p] + fs->font->charspc_x;
     }
     
-//    LabImmDrawArrays(ds->imm_ctx, 2, labprim_triangles,
-//                     verts.data(), tcoords.data(), colors.data(),
-//                     count * 6)
-                     
-//    mtlfonsDrawTriangleBatch(LabFontInternal::fontStash(), fs->font->texture,
-//                     verts.data(), tcoords.data(), colors.data(),
-//                     count * 6);
+    LabImmDrawArrays(LabFontInternal::_imm_ctx, fs->font->texture_slot,
+                     labprim_triangles,
+                     verts.data(), tcoords.data(), colors.data(),
+                     count * 6);
+    
     return x + kern + (idx * px);
 }
 

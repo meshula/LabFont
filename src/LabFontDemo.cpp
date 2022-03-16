@@ -115,8 +115,8 @@ void fontDemo(LabFontDrawState* ds, float& dx, float& dy, float sx, float sy) {
     //-------------------------------------
     sz = 18.f * dpis;
     static LabFontState* p2_st = LabFontStateBake(font_demo.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignTop }, 0, 0);
-    dx = 350 * dpis; 
-    dy = 450 * dpis;
+    dx = 250 * dpis;
+    dy = 350 * dpis;
     line(dx - 10 * dpis, dy, dx + 250 * dpis, dy);
     dx = LabFontDraw(ds, "Top", dx, dy, p2_st);
     static LabFontState* g2_st = LabFontStateBake(font_demo.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignMiddle }, 0, 0);
@@ -128,8 +128,8 @@ void fontDemo(LabFontDrawState* ds, float& dx, float& dy, float sx, float sy) {
     dx += 10 * dpis;
     static LabFontState* h2_st = LabFontStateBake(font_demo.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignBottom }, 0, 0);
     LabFontDraw(ds, "Bottom", dx, dy, h2_st);
-    dx = 450 * dpis; 
-    dy = 500 * dpis;
+    dx = 362 * dpis; 
+    dy = 380 * dpis;
     line(dx, dy - 30 * dpis, dx, dy + 80.0f * dpis);
     static LabFontState* i2_st = LabFontStateBake(font_demo.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignBaseline }, 0, 0);
     static LabFontState* k2_st = LabFontStateBake(font_demo.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignCenter | LabFontAlignBaseline }, 0, 0);
