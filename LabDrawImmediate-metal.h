@@ -96,12 +96,12 @@ LabImmDrawLine(
 
 void LabImmDrawBatch(
     LabImmDrawContext* _Nonnull,
-    int texture_slot,
+    int texture_slot, bool sample_nearest,
     LabImmContext* _Nonnull);
 
 void LabImmDrawArrays(
     LabImmDrawContext* _Nonnull,
-    int texture_slot,
+    int texture_slot, bool sample_nearest,
     LabPrim,
     const float* _Nonnull verts,
     const float* _Nonnull tcoords,
@@ -168,10 +168,14 @@ static NSString *shaderSource = @""
     "fragment half4 mtlfontstash_fragment(\n"
     "                  FragmentIn in [[stage_in]],\n"
     "                  constant int& texture_slot [[buffer(1)]],\n"
+    "                  constant float& closest_linear [[buffer(2)]],\n"
     "                  array<texture2d<half, access::sample>,16> atlasTexture [[texture(0)]])\n"
     "{\n"
     "    constexpr sampler linearSampler(coord::normalized, filter::linear, address::clamp_to_edge);\n"
-    "    half mask = atlasTexture[texture_slot].sample(linearSampler, in.texCoords).r;\n"
+    "    half mask_lin = atlasTexture[texture_slot].sample(linearSampler, in.texCoords).r;\n"
+    "    constexpr sampler closestSampler(coord::normalized, filter::nearest, address::clamp_to_edge);\n"
+    "    half mask_closest = atlasTexture[texture_slot].sample(closestSampler, in.texCoords).r;\n"
+    "    half mask = mask_lin * closest_linear + mask_closest * (1.f - closest_linear);"
     "    half4 color = in.color * mask;\n"
     "    return color;\n"
     "}";
@@ -266,8 +270,9 @@ LabImmDrawContextCreate(
         int nverts) {
         LabImmDrawContext* mtl = (LabImmDrawContext*) ptr;
         // fonstash texture atlas in slot 2
-        LabImmDrawArrays(mtl, ATLAS_FONSTASH_TEXTURE, labprim_triangles,
-            verts, tcoords, colors, nverts);
+        LabImmDrawArrays(mtl, ATLAS_FONSTASH_TEXTURE, false,
+                         labprim_triangles,
+                         verts, tcoords, colors, nverts);
     };
 
     // the atlas could be deleted on demand by fonstash, but there's no need,
@@ -400,7 +405,7 @@ LabImmDraw__renderPipelineState(LabImmDrawContext* mtl)  {
 }
 
 void LabImmDrawArrays(LabImmDrawContext* mtl, 
-        int texture_slot,
+        int texture_slot, bool sample_nearest,
         LabPrim prim,
         const float* verts, const float* tcoords, const unsigned int* colors, 
         int nverts)
@@ -451,6 +456,10 @@ void LabImmDrawArrays(LabImmDrawContext* mtl,
                                   length:sizeof(simd_float4x4) atIndex:1];
     [renderCommandEncoder setFragmentBytes:&texture_slot
                                   length:sizeof(int) atIndex:1];
+    
+    float closest_linear = sample_nearest ? 0.f : 1.f;
+    [renderCommandEncoder setFragmentBytes:&closest_linear
+                                  length:sizeof(float) atIndex:2];
     [renderCommandEncoder setFragmentTextures:mtl->atlasTexture withRange:NSMakeRange(0,ATLAS_SLOT_MAX)];
     [renderCommandEncoder drawPrimitives:mtl_prim
                              vertexStart:0 vertexCount:nverts];
@@ -459,7 +468,7 @@ void LabImmDrawArrays(LabImmDrawContext* mtl,
 
 void LabImmDrawBatch(
     LabImmDrawContext* _Nonnull mtl,
-    int texture_slot,
+    int texture_slot, bool sample_nearest,
     LabImmContext* _Nonnull batch)
 {
     if (!mtl || !batch || batch->interleaved ||
@@ -470,7 +479,7 @@ void LabImmDrawBatch(
 
     if (!batch->interleaved) {
         LabImmDrawArrays(mtl, 
-            texture_slot,
+            texture_slot, sample_nearest,
             batch->prim, 
             batch->data_pos, batch->data_st, batch->data_rgba, batch->count); 
     }
@@ -507,6 +516,11 @@ void LabImmDrawLine(
     int texture_slot = ATLAS_CLEAR_TEXTURE;
     [renderCommandEncoder setFragmentBytes:&texture_slot
                                   length:sizeof(int) atIndex:1];
+
+    float closest_linear = 0.f;
+    [renderCommandEncoder setFragmentBytes:&closest_linear
+                                  length:sizeof(float) atIndex:2];
+
     [renderCommandEncoder setFragmentTextures:mtl->atlasTexture withRange:NSMakeRange(0, ATLAS_SLOT_MAX)];
     [renderCommandEncoder drawPrimitives:MTLPrimitiveTypeLine vertexStart:0 vertexCount:2];
 }

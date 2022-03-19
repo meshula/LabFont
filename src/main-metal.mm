@@ -201,7 +201,7 @@ static LabZep* zep = nullptr;
     }
 
     // texture slot 1 ~~ solid color
-    LabImmDrawBatch(self->imm_ctx, 1, &lic);
+    LabImmDrawBatch(self->imm_ctx, 1, true, &lic);
     free(buff);
 
     // microui layer

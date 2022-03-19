@@ -10,6 +10,7 @@ static struct {
     LabFont* font_bold = nullptr;
     LabFont* font_cousine = nullptr;
     LabFont* font_robot18 = nullptr;
+    LabFont* font_c64 = nullptr;
     float dpi_scale = 2.f;
 } font_demo;
 
@@ -44,7 +45,9 @@ void font_demo_init(const char* path_)
     
     static std::string r18_path = path + "hauer-12.png";// "robot-18.png";
     font_demo.font_robot18 = LabFontLoad("robot-18", 
-            r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });    
+            r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });
+    
+    font_demo.font_c64 = LabFontLoad("c64", nullptr, LabFontType{ LabFontTypeSokol8x8 });
 }
 
 void fontDemo(LabFontDrawState* ds, float& dx, float& dy, float sx, float sy) {
@@ -113,8 +116,8 @@ void fontDemo(LabFontDrawState* ds, float& dx, float& dy, float sx, float sy) {
     dy += 30 * dpis;
     LabFontDraw(ds, "Right", dx, dy, l_st);
     //-------------------------------------
-    sz = 18.f * dpis;
-    static LabFontState* p2_st = LabFontStateBake(font_demo.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignTop }, 0, 0);
+    sz = 16.f;
+    static LabFontState* p2_st = LabFontStateBake(font_demo.font_c64, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignTop }, 0, 0);
     dx = 250 * dpis;
     dy = 350 * dpis;
     line(dx - 10 * dpis, dy, dx + 250 * dpis, dy);

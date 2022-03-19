@@ -419,13 +419,15 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
         using namespace lf_internal;
         static bool unpack = true;
         static uint8_t* texture = nullptr;
+        static id<MTLTexture> mtl_texture = nil;
+        static int mtl_texture_slot = 0;
         LabFont* r = (LabFont*)calloc(1, sizeof(LabFont));
         if (!r)
         {
             return nullptr;
         }
         if (unpack) {
-            size_t sz = 2048 * 8 * 6;
+            size_t sz = 2048 * 8 * 8;   // two extra slots. 6 * 8 is enough, but, power of 2.
             texture = (uint8_t*) malloc(sz);
             sokol8x8_unpack_font(sokol_font_kc853, 0, 0xff, texture + 2048 * 8 * 0);
             sokol8x8_unpack_font(sokol_font_kc854, 0, 0xff, texture + 2048 * 8 * 1);
@@ -438,27 +440,32 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                 [MTLTextureDescriptor
                     texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
                                                  width: 256 * 8
-                                                height: 6 * 8
+                                                height: 8 * 8
                                              mipmapped:NO];
 
-            r->texture = [LabFontInternal::_imm_ctx->device
+            mtl_texture = [LabFontInternal::_imm_ctx->device
                                 newTextureWithDescriptor:descriptor];
             
-            if (r->texture == nil) {
-                printf("Could not create a Metal texture of size %d x %d\n", 256 * 8, 6 * 8);
+            if (mtl_texture == nil) {
+                printf("Could not create a Metal texture of size %d x %d\n", 256 * 8, 8 * 8);
                 free(r);
                 return nullptr;
             }
 
-            r->texture_slot = LabFontInternal::_imm_ctx->next_texture_slot;
+            mtl_texture_slot = LabFontInternal::_imm_ctx->next_texture_slot;
+            LabFontInternal::_imm_ctx->atlasTexture[mtl_texture_slot] = mtl_texture;
             ++LabFontInternal::_imm_ctx->next_texture_slot;
 
-            [r->texture replaceRegion:MTLRegionMake2D(0, 0, 256 * 8, 6 * 8)
-                          mipmapLevel:0
-                            withBytes:texture
-                          bytesPerRow:256 * 8];
+            [mtl_texture replaceRegion:MTLRegionMake2D(0, 0, 256 * 8, 8 * 8)
+                           mipmapLevel:0
+                             withBytes:texture
+                           bytesPerRow:256 * 8];
+
+            unpack = false;
         }
 
+        r->texture = mtl_texture;
+        r->texture_slot = mtl_texture_slot;
         r->id = -2;
         r->img_w = 256 * 8;
         r->baseline = 7;
@@ -503,34 +510,32 @@ LabFont* LabFontGet(const char* name)
 
 static bool qp_must_init = true;
 
-static void quadplay_font_init()
-{
-    qp_must_init = false;
-}
-
 static float sokol_8x8_draw(const char* str, const char* end, 
         LabFontColor* c, float x, float y, LabFontState* fs)
 {
-    return 0;
-#if 0
-    if (str == nullptr || fs == nullptr || fs->font->img.id <= 0)
+    if (str == nullptr || fs == nullptr || fs->font->texture == nil)
         return x;
+
     if (end == nullptr)
         end = str + strlen(str);
-    if (qp_must_init) {
-        quadplay_font_init();
-        qp_must_init = false;
-    }
 
-    sgl_push_pipeline();
-    sgl_load_pipeline(qp_pip);
-    sgl_enable_texture();
-    sgl_texture(fs->font->img);
-    sgl_begin_quads();
-    sgl_c4b(c->rgba[0], c->rgba[1], c->rgba[2], c->rgba[3]);
+    FONScontext* fc = LabFontInternal::fontStash();
+    uint32_t* rgba_p = (uint32_t*) & c->rgba;
+    uint32_t rgba = *rgba_p;
+    int count = end - str;
+  
+    static std::vector<float> verts;
+    static std::vector<float> tcoords;
+    static std::vector<uint32_t> colors;
+    verts.clear();
+    verts.reserve(count * 6 * 2);
+    tcoords.clear();
+    tcoords.reserve(count * 6 * 2);
+    colors.clear();
+    colors.reserve(count * 6);
 
-    int px = 8;
-    int py = 8;
+    int px = fs->size;
+    int py = fs->size;
 
     if (fs->alignment.alignment & LabFontAlignBottom)
         y -= py;
@@ -548,40 +553,58 @@ static float sokol_8x8_draw(const char* str, const char* end,
         x -= sz.width;
     }
 
-    float fpx = px / float(fs->font->img_w);
-    float fpy = float(fs->font->img_h) / 48.f;
+    const float pixel_h_pitch = 1.f / float(fs->font->img_w);
+    const float pixel_8h_pitch = 8.f / float(fs->font->img_w);
+    const float font_y_start = float(fs->font->img_h) / 64.f;// + 1.f/128.f;
+    const float font_y_pitch = 8.f / 64.f - 1.f/128.f;
     float idx = 0;
     int kern = 0;
-
-    float render_w = px * 4;
-    float render_h = py * 4;
-
+    float render_w = px;// * 4;
+    float render_h = py;// * 4;
     for (const char* p = str; p != end; p++, idx += 1.f) {
         int i = (int) *p;
         int ix = i;
 
-        float u0 = float(ix) * fpx;
-        float v0 = fpy;
-        float u1 = u0 + fpx;
-        float v1 = v0 + float(py) / 48.f;
+        float u0 = pixel_h_pitch * (ix * 8);
+        float u1 = u0 + pixel_8h_pitch;
+        float v0 = font_y_start;
+        float v1 = v0 + font_y_pitch;
 
         float x0 = (x + kern) + (idx * render_w);
         float y0 = y;
         float x1 = x0 + render_w;
         float y1 = y0 + render_h;
-        sgl_v2f_t2f(x0, y0, u0, v0);
-        sgl_v2f_t2f(x1, y0, u1, v0);
-        sgl_v2f_t2f(x1, y1, u1, v1);
-        sgl_v2f_t2f(x0, y1, u0, v1);
+
+        verts.push_back(x0); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y1);
+        verts.push_back(x0); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y1);
+        verts.push_back(x0); verts.push_back(y1);
+        
+        tcoords.push_back(u0); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v1);
+        tcoords.push_back(u0); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v1);
+        tcoords.push_back(u0); tcoords.push_back(v1);
+
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
 
         kern += fs->font->charspc_x;
     }
 
-    sgl_end();
-    sgl_pop_pipeline();
-    sgl_disable_texture();
+     LabImmDrawArrays(LabFontInternal::_imm_ctx, fs->font->texture_slot, true,
+                     labprim_triangles,
+                     verts.data(), tcoords.data(), colors.data(),
+                     count * 6);
+
     return x + kern + (idx * px);
-#endif
 }
 
 static float quadplay_font_draw(const char* str, const char* end, 
@@ -593,11 +616,6 @@ static float quadplay_font_draw(const char* str, const char* end,
     if (end == nullptr)
         end = str + strlen(str);
 
-    if (qp_must_init) {
-        quadplay_font_init();
-        qp_must_init = false;
-    }
-
     FONScontext* fc = LabFontInternal::fontStash();
     uint32_t* rgba_p = (uint32_t*) & c->rgba;
     uint32_t rgba = *rgba_p;
@@ -606,7 +624,6 @@ static float quadplay_font_draw(const char* str, const char* end,
     static std::vector<float> verts;
     static std::vector<float> tcoords;
     static std::vector<uint32_t> colors;
-    
     verts.clear();
     verts.reserve(count * 6 * 2);
     tcoords.clear();
@@ -675,7 +692,7 @@ static float quadplay_font_draw(const char* str, const char* end,
         kern += fs->font->kern[*p] + fs->font->charspc_x;
     }
     
-    LabImmDrawArrays(LabFontInternal::_imm_ctx, fs->font->texture_slot,
+    LabImmDrawArrays(LabFontInternal::_imm_ctx, fs->font->texture_slot, true,
                      labprim_triangles,
                      verts.data(), tcoords.data(), colors.data(),
                      count * 6);
@@ -698,12 +715,9 @@ float LabFontDraw(LabFontDrawState* ds, const char* str, float x, float y, LabFo
         if (fs->font->id == -1) {
             return quadplay_font_draw(str, nullptr, &fs->color, x, y, fs);
         }
-#ifdef LABFONT_HAVE_SOKOL
         else if (fs->font->id == -2) {
-            LabFontColor c = { 255,255,255,255 };
             return sokol_8x8_draw(str, nullptr, &fs->color, x, y, fs);
         }
-#endif
     }
     return x;
 }
@@ -727,11 +741,14 @@ float LabFontDrawSubstringColor(LabFontDrawState* ds,
         fonsSetColor(fc, LabFontInternal::fons_rgba(*c));
         return fonsDrawText(fc, x, y, str, end);
     }
-#ifdef LABFONT_HAVE_SOKOL
-    else if (fs->font->img.id > 0) {
-        quadplay_font_draw(str, end, c, x, y, fs);
+    else if (fs->font->texture != nil) {
+        if (fs->font->id == -1) {
+            return quadplay_font_draw(str, end, c, x, y, fs);
+        }
+        else if (fs->font->id == -2) {
+            return sokol_8x8_draw(str, end, c, x, y, fs);
+        }
     }
-#endif
     return x;
 }
 
@@ -755,58 +772,54 @@ LabFontSize LabFontMeasureSubstring(const char* str, const char* end, LabFontSta
         fonsVertMetrics(fc, &sz.ascender, &sz.descender, &sz.height);
         return sz;
     }
-#if 0
-    else if (fs->font->img.id > 0) {
-        if (fs->font->id == -1) {
-            LabFontSize sz;
-            sz.ascender = 0;
-            sz.descender = (float) (fs->font->charsz_y - fs->font->baseline);
-            size_t len = end != nullptr ? end - str : strlen(str);
+    if (fs->font->id == -1) {
+        LabFontSize sz;
+        sz.ascender = 0;
+        sz.descender = (float) (fs->font->charsz_y - fs->font->baseline);
+        size_t len = end != nullptr ? end - str : strlen(str);
 
-            float x = 0;
-            float kern = 0;
-            float idx = 0.f;
-            float px = fs->font->img_w / 32.f;
-            for (size_t c = 0; c < len; ++c, idx += 1.f) {
-                unsigned char ch = *(str + c);
-                int i = qp_font_map[ch];
-                int ix = i & 0x1f;
+        float x = 0;
+        float kern = 0;
+        float idx = 0.f;
+        float px = fs->font->img_w / 32.f;
+        for (size_t c = 0; c < len; ++c, idx += 1.f) {
+            unsigned char ch = *(str + c);
+            int i = qp_font_map[ch];
+            int ix = i & 0x1f;
 
-                float u0 = (float(ix) * px) / fs->font->img_w;
-                float u1 = u0 + px;
-                float x0 = (x + kern) + (idx * px);
-                float x1 = x0 + px;
-                kern += fs->font->kern[ch] + fs->font->charspc_x;
-            }
-            sz.width = x + kern + (idx * px);
-            sz.height = (float) fs->font->charsz_y;
-            return sz;
+            float u0 = (float(ix) * px) / fs->font->img_w;
+            float u1 = u0 + px;
+            float x0 = (x + kern) + (idx * px);
+            float x1 = x0 + px;
+            kern += fs->font->kern[ch] + fs->font->charspc_x;
         }
-        else if (fs->font->id == -2) {
-            LabFontSize sz;
-            sz.ascender = 0;
-            sz.descender = (float) (fs->font->charsz_y - fs->font->baseline);
-            size_t len = end != nullptr ? end - str : strlen(str);
-
-            float x = 0;
-            float kern = 0;
-            float idx = 0.f;
-            float px = 8.f / fs->font->img_w;
-            for (size_t c = 0; c < len; ++c, idx += 1.f) {
-                unsigned char ch = *(str + c);
-                int ix = (int) ch;
-                float u0 = (float(ix) * px) / fs->font->img_w;
-                float u1 = u0 + px;
-                float x0 = (x + kern) + (idx * px);
-                float x1 = x0 + px;
-                kern += fs->font->charspc_x;
-            }
-            sz.width = x + kern + (idx * px);
-            sz.height = (float) fs->font->charsz_y;
-            return sz;
-        }
+        sz.width = x + kern + (idx * px);
+        sz.height = (float) fs->font->charsz_y;
+        return sz;
     }
-  #endif
+    if (fs->font->id == -2) {
+        LabFontSize sz;
+        sz.ascender = 0;
+        sz.descender = (float) (fs->font->charsz_y - fs->font->baseline);
+        size_t len = end != nullptr ? end - str : strlen(str);
+
+        float x = 0;
+        float kern = 0;
+        float idx = 0.f;
+        float px = 8.f / fs->font->img_w;
+        for (size_t c = 0; c < len; ++c, idx += 1.f) {
+            unsigned char ch = *(str + c);
+            int ix = (int) ch;
+            float u0 = (float(ix) * px) / fs->font->img_w;
+            float u1 = u0 + px;
+            float x0 = (x + kern) + (idx * px);
+            float x1 = x0 + px;
+            kern += fs->font->charspc_x;
+        }
+        sz.width = x + kern + (idx * px);
+        sz.height = (float) fs->font->charsz_y;
+        return sz;
+    }
     return { 0, 0, 0, 0 };
 }
 
