@@ -8,6 +8,13 @@
 #define LAB_EXTERNC
 #endif
 
+#include <stdint.h>
+#include <stddef.h>
+
+#ifdef __clang__
+_Pragma("clang assume_nonnull begin")
+#endif
+
 // nb: if points are to be supported, the associated vertex shader needs
 // to explicitly output [[point_size]] under Metal or the behavior is undefined
 // points not supported since there's no data_point_size attribute on the 
@@ -26,7 +33,10 @@ typedef enum {
     labprim_tristrip,
 } LabPrim;
 
-typedef struct {
+struct LabImmPlatformContext;
+typedef struct LabImmPlatformContext LabImmPlatformContext;
+
+typedef struct LabImmContext {
     float* data_pos;
     float* data_st;
     uint32_t* data_rgba;
@@ -39,13 +49,20 @@ typedef struct {
     bool interleaved;
     float s, t;
     uint32_t rgba;
+    
+    LabImmPlatformContext* platform;
 } LabImmContext;
 
 LAB_EXTERNC size_t lab_imm_size_bytes(int vert_count);
 
-LAB_EXTERNC void lab_imm_begin(LabImmContext*, 
+LAB_EXTERNC void lab_imm_batch_begin(
+                    LabImmContext*,
+                    LabImmPlatformContext*,
                     int sz, LabPrim prim, bool interleaved, float* data);
-LAB_EXTERNC void lab_imm_end(LabImmContext*);
+
+void lab_imm_batch_draw(
+    LabImmContext* _Nonnull,
+                        int texture_slot, bool sample_nearest);
 
 LAB_EXTERNC void lab_imm_batch_v2f(LabImmContext*, 
                     int count, float* v2f);
@@ -63,12 +80,19 @@ LAB_EXTERNC void lab_imm_v2f_st_rgba(LabImmContext*,
                     uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
 LAB_EXTERNC void lab_imm_c4f(LabImmContext*,
-                             float r, float g, float b, float a);
+                    float r, float g, float b, float a);
+
+LAB_EXTERNC void lab_imm_line(LabImmContext* lc,
+                    float x0, float y0, float x1, float y1, float w);
+
 //-----------------------------------------------------------------------------
 // utility
 // [32 ABGR 0]
 uint32_t lab_imm_pack_RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
+#ifdef __clang__
+_Pragma("clang assume_nonnull end")
+#endif
 
 #endif
 
@@ -76,11 +100,36 @@ uint32_t lab_imm_pack_RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
 #include <string.h>
 
+#ifdef __clang__
+_Pragma("clang assume_nonnull begin")
+#endif
+
 uint32_t lab_imm_pack_RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 {
     return (r) | (g << 8) | (b << 16) | (a << 24);
 }
 
+// there's a really nice joined line with mitered or round ends here, under bsd-2.
+// https://github.com/mapbox/mapbox-gl-native/blob/b8edc2399b9640498ccbbbb5b8f058c63d070933/src/mbgl/renderer/buckets/line_bucket.cpp
+
+LAB_EXTERNC void lab_imm_line(LabImmContext* lc, float x0, float y0, float x1, float y1, float w) {
+    float dy = x1 - x0;
+    float dx = y1 - y0;
+    float r = sqrtf(dx*dx + dy*dy);
+    if (r < 0.001f)
+        return;
+    
+    dy = w * dy / r;
+    dx = w * dx / r;
+    
+    lab_imm_v2f(lc, x0+dx, y0-dy);
+    lab_imm_v2f(lc, x1-dx, y1+dy);
+    lab_imm_v2f(lc, x0-dx, y0+dy);
+
+    lab_imm_v2f(lc, x0+dx, y0-dy);
+    lab_imm_v2f(lc, x1+dx, y1-dy);
+    lab_imm_v2f(lc, x1-dx, y1+dy);
+}
 
 LAB_EXTERNC void lab_imm_c4f(LabImmContext* lc,
                              float r, float g, float b, float a)
@@ -96,10 +145,12 @@ LAB_EXTERNC size_t lab_imm_size_bytes(int vert_count) {
     return sizeof(float) * vert_count * (3 + 2 + 1);
 }
 
-LAB_EXTERNC void lab_imm_begin(LabImmContext* lc, 
+LAB_EXTERNC void lab_imm_batch_begin(LabImmContext* lc,
+                                     LabImmPlatformContext* pc,
         int sz, LabPrim prim, bool interleaved, float* data) 
 {
     memset(lc, 0, sizeof(LabImmContext));
+    lc->platform = pc;
     lc->sz = sz;
     lc->prim = prim;
     lc->interleaved = interleaved;
@@ -113,12 +164,10 @@ LAB_EXTERNC void lab_imm_begin(LabImmContext* lc,
     else {
         lc->stride = 0;
         lc->data_st = data + sz * 2;
-        lc->data_rgba = (uint32_t*) (data + sz * (2 + 2));
+        lc->data_rgba = (uint32_t*) (lc->data_st + sz * 2);
     }
 }
 
-LAB_EXTERNC void lab_imm_end(LabImmContext*) {
-}
 
 LAB_EXTERNC void lab_imm_batch_v2f(LabImmContext* lc, int count, float* v2f) {
     uint32_t c = lc->rgba;
@@ -249,6 +298,10 @@ LAB_EXTERNC void lab_imm_v2f_st_rgba(LabImmContext* lc,
     lc->rgba = lab_imm_pack_RGBA(r, g, b, a);
     lab_imm_v2f(lc, x, y);
 }
+
+#ifdef __clang__
+_Pragma("clang assume_nonnull end")
+#endif
 
 #endif
 

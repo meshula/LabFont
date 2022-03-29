@@ -10,7 +10,9 @@
 
 struct LabFontState;
 struct LabZep;
-LZ_EXTERNC LabZep* LabZep_create(LabFontState*, const char* filename, const char* text);
+struct LabImmPlatformContext;
+
+LZ_EXTERNC LabZep* LabZep_create(LabImmPlatformContext*, LabFontState*, const char* filename, const char* text);
 LZ_EXTERNC void LabZep_free(LabZep*);
 LZ_EXTERNC void LabZep_input_sokol_key(LabZep*, int key, bool shift, bool ctrl);
 

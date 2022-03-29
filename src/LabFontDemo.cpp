@@ -59,7 +59,7 @@ void fontDemo(LabFontDrawState* ds, float& dx, float& dy, float sx, float sy) {
     float sz;
 
     //-------------------------------------
-    sz = 80.f * dpis;
+    sz = 50.f * dpis;
     static LabFontState* a_st = LabFontStateBake(font_demo.font_normal, sz, { {255, 255, 255, 255} }, LabFontAlign{ 0 }, 0, 0);
     static LabFontState* b_st = LabFontStateBake(font_demo.font_italic, sz, { {128, 128, 0, 255} },   LabFontAlign{ 0 }, 0, 0);
     static LabFontState* c_st = LabFontStateBake(font_demo.font_italic, sz, { {255, 255, 255, 255} }, LabFontAlign{ 0 }, 0, 0);
@@ -85,7 +85,7 @@ void fontDemo(LabFontDrawState* ds, float& dx, float& dy, float sx, float sy) {
     static LabFontState* f_st = LabFontStateBake(font_demo.font_italic, sz, { {255, 255, 0, 255} }, LabFontAlign{ 0 }, 0, 0);
     LabFontDraw(ds, "Ég get etið gler án þess að meiða mig.", dx, dy, f_st);
     //-------------------------------------
-    sz = 32.f * dpis;
+    sz = 24.f * dpis;
     static LabFontState* j_st = LabFontStateBake(font_demo.font_japanese, sz, { {128, 128, 0, 255} }, LabFontAlign{ 0 }, 0, 0);
     dx = sx;
     dy += sz;

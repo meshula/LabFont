@@ -6,6 +6,7 @@
 #endif
 
 #include "../LabFont.h"
+#include "../LabDrawImmediate.h"
 
 #include <zep/display.h>
 #include <zep/syntax.h>
@@ -62,13 +63,24 @@ namespace
     class LabZepRender : public ZepDisplay
     {
     public:
-        LabZepRender(const NVec2f& pixelScale)//,
+        LabFontDrawState* ds = nullptr;
+
+    private:
+        NRectf _clipRect;
+        mutable vector<NRectf> _clipStack;  // zep interfaces have const draws
+        mutable vector<float> _imm_buff;    // zep interfaces have const draws
+        LabImmPlatformContext* _platform;
+        
+    public:
+        LabZepRender(const NVec2f& pixelScale,
+                     LabImmPlatformContext* pc) //,
                                //std::shared_ptr<ZepFont> ui,
                                //std::shared_ptr<ZepFont> text,
                                //std::shared_ptr<ZepFont> h1,
                                //std::shared_ptr<ZepFont> h2,
                                //std::shared_ptr<ZepFont> h3)
             : ZepDisplay(pixelScale)
+        , _platform(pc)
         {
             //        m_fonts[(int)ZepTextType::UI] = ui;
             //        m_fonts[(int)ZepTextType::Text] = text;
@@ -140,6 +152,15 @@ namespace
             sgl_v2f_c4f(start.x, start.y, color.x, color.y, color.z, color.w);
             sgl_v2f_c4f(end.x, end.y, color.x, color.y, color.z, color.w);
             sgl_end();
+#else
+            if (_imm_buff.size() < 64)
+                _imm_buff.resize(64);
+            
+            LabImmContext lic;
+            lab_imm_batch_begin(&lic, _platform, 64, labprim_triangles, false, _imm_buff.data());
+            lab_imm_c4f(&lic, color.x, color.y, color.z, color.w);
+            lab_imm_line(&lic, start.x, start.y, end.x, end.y, width);
+            lab_imm_batch_draw(&lic, 1, true);     // texture slot 1 ~~ solid color
 #endif
             
             if (need_clip)
@@ -160,6 +181,23 @@ namespace
             sgl_v2f_c4f(rc.bottomRightPx.x, rc.bottomRightPx.y, color.x, color.y, color.z, color.w);
             sgl_v2f_c4f(rc.topLeftPx.x, rc.bottomRightPx.y, color.x, color.y, color.z, color.w);
             sgl_end();
+#else
+            if (_imm_buff.size() < 256)
+                _imm_buff.resize(256);
+            
+            LabImmContext lic;
+            lab_imm_batch_begin(&lic, _platform, 256, labprim_triangles, false, _imm_buff.data());
+            lab_imm_c4f(&lic, color.x, color.y, color.z, color.w);
+            
+            lab_imm_v2f(&lic, rc.topLeftPx.x,     rc.topLeftPx.y);
+            lab_imm_v2f(&lic, rc.bottomRightPx.x, rc.topLeftPx.y);
+            lab_imm_v2f(&lic, rc.bottomRightPx.x, rc.bottomRightPx.y);
+
+            lab_imm_v2f(&lic, rc.topLeftPx.x,     rc.topLeftPx.y);
+            lab_imm_v2f(&lic, rc.bottomRightPx.x, rc.bottomRightPx.y);
+            lab_imm_v2f(&lic, rc.topLeftPx.x,     rc.bottomRightPx.y);
+            
+            lab_imm_batch_draw(&lic, 1, true); // texture slot 1 ~~ solid color
 #endif
             
             if (need_clip)
@@ -180,12 +218,6 @@ namespace
         {
             return *m_fonts[(int)type];
         }
-        
-        LabFontDrawState* ds = nullptr;
-
-    private:
-        NRectf _clipRect;
-        mutable vector<NRectf> _clipStack;
     };
 
 
@@ -342,12 +374,12 @@ namespace
         LabZepRender* renderer = nullptr;
 
         LabZepDetail(const std::string& startupFilePath, const std::string& configPath,
-            LabFontState* font, const char* initialText)
+            LabImmPlatformContext* pc, LabFontState* font, const char* initialText)
             //, fileWatcher(spEditor->GetFileSystem().GetConfigPath(), std::chrono::seconds(2))
         {
             //        chibi_init(scheme, SDL_GetBasePath());
 
-            renderer = new LabZepRender(GetPixelScale());
+            renderer = new LabZepRender(GetPixelScale(), pc);
             spEditor = std::make_unique<LabZepEventHandler>(configPath, GetPixelScale(), renderer);
 
             auto& display = static_cast<LabZepRender&>(spEditor->GetDisplay());
@@ -559,13 +591,14 @@ extern "C" struct LabZep
 };
 
 extern "C" LabZep * LabZep_create(
+    LabImmPlatformContext* pc,
     LabFontState* font,
     const char* filename, const char* text)
 {
     LabZep* zp = new LabZep();
     std::string startupFilePath;
     std::string configPath;
-    zp->zep = new LabZepDetail(startupFilePath, configPath, font, text);
+    zp->zep = new LabZepDetail(startupFilePath, configPath, pc, font, text);
     zp->zep->GetEditor().SetGlobalMode(Zep::ZepMode_Vim::StaticName());
     zp->zep->GetEditor().GetTheme().SetThemeType(Zep::ThemeType::Dark);
 

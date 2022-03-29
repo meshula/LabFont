@@ -42,7 +42,7 @@ if (LABFONT_METAL)
     set(LABFONT_PLATFORM_SRC
         src/main-metal.mm
         src/LabFont-metal.mm
-        src/lab_microui-metal.mm
+        src/lab_microui-metal.mm)
     set(ST_GFX_DEFS LABFONT_HAVE_METAL)
 endif()
 
@@ -89,7 +89,9 @@ if (APPLE)
     list(APPEND LIBS
         "-framework Cocoa"
         "-framework Metal"
+        "-framework MetalKit"
         "-framework QuartzCore"
+        "-framework Carbon"
     )
 
     configure_file(

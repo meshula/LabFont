@@ -99,20 +99,6 @@ namespace LabFontInternal {
     FONScontext* fontStash()
     {
         return _imm_ctx->fonsContext;
-#if 0
-        static FONScontext* fs = nullptr;
-        if (fs != nullptr)
-            return fs;
-
-        if (!_device)
-            return nullptr;
-
-        const int atlas_dim = 1024;
-        fs = mtlfonsCreate(_device,
-                           atlas_dim, atlas_dim, FONS_ZERO_TOPLEFT);
-        mtlfonsSetRenderTargetPixelFormat(fs, LabFontInternal::_format);
-        return fs;
-#endif
     }
 
     constexpr uint32_t fons_rgba(const LabFontColor& c)
@@ -620,6 +606,8 @@ static float quadplay_font_draw(const char* str, const char* end,
     uint32_t* rgba_p = (uint32_t*) & c->rgba;
     uint32_t rgba = *rgba_p;
     int count = end - str;
+    if (!count)
+        return;
     
     static std::vector<float> verts;
     static std::vector<float> tcoords;

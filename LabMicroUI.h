@@ -13,9 +13,10 @@
 
 struct LabFontDrawState;
 struct LabFontState;
+struct LabImmPlatformContext;
 struct LabZep;
 
-LAB_EXTERNC mu_Context* lab_microui_init(LabFontState*);
+LAB_EXTERNC mu_Context* lab_microui_init(LabImmPlatformContext* imm_ctx, LabFontState*);
 LAB_EXTERNC void lab_microui_render(LabFontDrawState*, int w, int h, LabZep*);
 LAB_EXTERNC void lab_microui_input_sokol_keydown(int c);
 LAB_EXTERNC void lab_microui_input_sokol_keyup(int c);

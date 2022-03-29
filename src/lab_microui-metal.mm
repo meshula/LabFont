@@ -1,9 +1,7 @@
 
 #include "../LabMicroUI.h"
-
-#ifdef LABFONT_HAVE_SOKOL
-#include "../LabSokol.h"
-#endif
+#include "../LabDrawImmediate.h"
+#include "../LabDrawImmediate-metal.h"
 
 #include "microui.h"
 #include "../LabZep.h"
@@ -18,7 +16,7 @@ extern "C" void r_begin(LabFontDrawState*,
                         int disp_width, int disp_height);
 extern "C" void r_end(void);
 extern "C" void r_draw(void);
-extern "C" void r_init(LabFontState * font);
+extern "C" void r_init(LabImmDrawContext* imm_ctx, LabFontState * font);
 extern "C" void r_draw_rect(mu_Rect rect, mu_Color color);
 extern "C" void r_draw_text(LabFontDrawState* ds,
                             const char* text, mu_Vec2 pos, mu_Color color);
@@ -30,18 +28,20 @@ extern "C" void r_set_clip_rect(mu_Rect rect);
 
 /*== microui renderer =========================================================*/
 
-LabFontState* font = nullptr;
+static LabFontState* _microui_current_font = nullptr;
 static LabFontSize font_size;
+static LabImmPlatformContext* _imm_ctx = nullptr;
 
 extern "C"
-void r_init(LabFontState * font_) {
-    font = font_;
+void r_init(LabImmDrawContext* imm_ctx, LabFontState * font_) {
+    _imm_ctx = imm_ctx;
+    _microui_current_font = font_;
     font_size = LabFontMeasure("", font_);
 }
 
 extern "C"
 void r_begin(LabFontDrawState* ds, int width, int height) {
-   // LabImmDrawSetViewport(self->imm_ctx, 0, 0, width, height);
+    ab_imm_viewport_set(_imm_ctx, 0, 0, width, height);
 }
 
 extern "C"
@@ -50,37 +50,35 @@ void r_end(void) {
 
 extern "C"
 void r_draw(void) {
-#ifdef LABFONT_HAVE_SOKOL
-    sgl_draw();
-#endif
 }
 
 extern "C"
 void r_push_quad(mu_Rect dst, mu_Rect src, mu_Color color) {
-#ifdef LABFONT_HAVE_SOKOL
     float x0 = (float)dst.x;
     float y0 = (float)dst.y;
     float x1 = (float)(dst.x + dst.w);
     float y1 = (float)(dst.y + dst.h);
 
-    sgl_begin_quads();
-    sgl_c4b(color.r, color.g, color.b, color.a);
-    sgl_v2f(x0, y0);
-    sgl_v2f(x1, y0);
-    sgl_v2f(x1, y1);
-    sgl_v2f(x0, y1);
-    sgl_end();
-#else
-#endif
+    const int vert_count = 4;
+    static size_t buff_size = lab_imm_size_bytes(vert_count);
+    static float* buff = (float*) malloc(buff_size);
+    LabImmContext lic;
+    lab_imm_batch_begin(&lic, _imm_ctx, vert_count, labprim_tristrip, false, buff);
+
+    lab_imm_c4f(&lic, (float)color.r / 255.f, (float)color.g / 255.f, (float)color.b / 255.f, (float)color.a / 255.f);
+
+    lab_imm_v2f(&lic, x0, y0);
+    lab_imm_v2f(&lic, x1, y0);
+    lab_imm_v2f(&lic, x0, y1);
+    lab_imm_v2f(&lic, x1, y1);
+
+    // texture slot 1 ~~ solid color
+    lab_imm_batch_draw(&lic, 1, true);
 }
 
 extern "C"
 void r_draw_rect(mu_Rect rect, mu_Color color) {
-#if 1
     r_push_quad(rect, rect, color);
-#else
-    r_push_quad(rect, atlas[ATLAS_WHITE], color);
-#endif
 }
 
 inline uint32_t ToPackedABGR(const mu_Color* val)
@@ -95,95 +93,58 @@ inline uint32_t ToPackedABGR(const mu_Color* val)
 
 extern "C"
 void r_draw_text(LabFontDrawState* ds, const char* text, mu_Vec2 pos, mu_Color color) {
-#if 1
     LabFontColor c;
     c.rgba[0] = color.r;
     c.rgba[1] = color.g;
     c.rgba[2] = color.b;
     c.rgba[3] = color.a;
-    LabFontDrawColor(ds, text, &c, (float) pos.x, (float) pos.y, font);
-#else
-    mu_Rect dst = { pos.x, pos.y, 0, 0 };
-    for (const char* p = text; *p; p++) {
-        mu_Rect src = atlas[ATLAS_FONT + (unsigned char)*p];
-        dst.w = src.w;
-        dst.h = src.h;
-        r_push_quad(dst, src, color);
-        dst.x += dst.w;
-    }
-#endif
+    LabFontDrawColor(ds, text, &c, (float) pos.x, (float) pos.y, _microui_current_font);
 }
 
 extern "C"
 int r_get_text_width(const char* text, int len) {
-#if 1
-    LabFontSize sz = LabFontMeasureSubstring(text, text + len, font);
+    LabFontSize sz = LabFontMeasureSubstring(text, text + len, _microui_current_font);
     return (int) sz.width;
-#else
-    int res = 0;
-    for (const char* p = text; *p && len--; p++) {
-        res += atlas[ATLAS_FONT + (unsigned char)*p].w;
-    }
-    return res;
-#endif
 }
 
 extern "C"
 void r_draw_icon(int id, mu_Rect rect, mu_Color color) {
-#ifdef LABFONT_HAVE_SOKOL
+    const int vert_count = 24;
+    static size_t buff_size = lab_imm_size_bytes(vert_count);
+    static float* buff = (float*) malloc(buff_size);
+    LabImmContext lic;
+    lab_imm_batch_begin(&lic, _imm_ctx, vert_count, labprim_triangles, false, buff);
+
+    lab_imm_c4f(&lic, (float)color.r / 255.f, (float)color.g / 255.f, (float)color.b / 255.f, (float)color.a / 255.f);
+
     float w2 = rect.w * 0.5f;
     float h2 = rect.h * 0.5f;
     float x = rect.x + w2 * 0.5f;
     float y = rect.y + h2 * 0.5f;
+    float w = 1.5f;
     switch (id) {
-    case MU_ICON_CLOSE:
-        sgl_begin_lines();
-        sgl_c4b(color.r, color.g, color.b, color.a);
-        sgl_v2f(x, y);
-        sgl_v2f(x + w2, y + h2);
-        sgl_v2f(x + w2, y);
-        sgl_v2f(x, y + h2);
-        sgl_end();
-        break;
-    case MU_ICON_CHECK:
-        sgl_begin_lines();
-        sgl_c4b(color.r, color.g, color.b, color.a);
-        sgl_v2f(x, y + rect.h * 0.2f);
-        sgl_v2f(x + rect.w * 0.1f, y + rect.h * 0.6f);
-
-        sgl_v2f(x + rect.w * 0.1f, y + rect.h * 0.6f);
-        sgl_v2f(x + rect.w * 0.6f, y - rect.h * 0.1f);
-        sgl_end();
-        break;
-    case MU_ICON_EXPANDED:
-        sgl_begin_lines();
-        sgl_c4b(color.r, color.g, color.b, color.a);
-        sgl_v2f(x + rect.w * 0.4f, y + h2 * 0.1f);
-        sgl_v2f(x + rect.w * 0.4f, y + h2 * 0.9f);
-
-        sgl_v2f(x + rect.w * 0.4f, y + h2 * 0.9f);
-        sgl_v2f(x, y + h2 * 0.9f);
-
-        sgl_v2f(x, y + h2 * 0.9f);
-        sgl_v2f(x + rect.w * 0.4f, y + h2 * 0.1f);
-        sgl_end();
-        break;
-    case MU_ICON_COLLAPSED:
-        sgl_begin_lines();
-        sgl_c4b(color.r, color.g, color.b, color.a);
-        sgl_v2f(x, y);
-        sgl_v2f(x, y + h2);
-
-        sgl_v2f(x, y + h2);
-        sgl_v2f(x + w2 * 0.5f, y + h2 * 0.5f);
-
-        sgl_v2f(x + w2 * 0.5f, y + h2 * 0.5f);
-        sgl_v2f(x, y);
-        sgl_end();
-        break;
+        case MU_ICON_CLOSE:
+            lab_imm_line(&lic, x, y,    x+w2, y+h2, w); // '\'
+            lab_imm_line(&lic, x, y+h2, x+w2, y,    w); // '/'
+            break;
+        case MU_ICON_CHECK:
+            lab_imm_line(&lic, x,                 y + rect.h * 0.25f, x + rect.w * 0.2f, y + rect.h * 0.6f, w);
+            lab_imm_line(&lic, x + rect.w * 0.2f, y + rect.h * 0.6f,  x + rect.w * 0.6f, y - rect.h * 0.1f, w);
+            break;
+        case MU_ICON_EXPANDED:
+            lab_imm_line(&lic, x + rect.w * 0.4f, y + h2 * 0.1f, x + rect.w * 0.4f, y + h2 * 0.9f, w);
+            lab_imm_line(&lic, x + rect.w * 0.4f, y + h2 * 0.9f, x,                 y + h2 * 0.9f, w);
+            lab_imm_line(&lic, x,                 y + h2 * 0.9f, x + rect.w * 0.4f, y + h2 * 0.1f, w);
+            break;
+        case MU_ICON_COLLAPSED:
+            lab_imm_line(&lic, x,             y,             x,             y + h2, w);
+            lab_imm_line(&lic, x,             y + h2,        x + w2 * 0.5f, y + h2 * 0.5f, w);
+            lab_imm_line(&lic, x + w2 * 0.5f, y + h2 * 0.5f, x,             y, w);
+            break;
     }
-#else
-#endif
+
+    // texture slot 1 ~~ solid color
+    lab_imm_batch_draw(&lic, 1, true);
 }
 
 
@@ -194,10 +155,15 @@ int r_get_text_height(void) {
 
 extern "C"
 void r_set_clip_rect(mu_Rect rect) {
-#ifdef LABFONT_HAVE_SOKOL
-    sgl_scissor_rect(rect.x, rect.y, rect.w, rect.h, true);
-#else
-#endif
+    if (rect.x > _imm_ctx->viewport.width || rect.y > _imm_ctx->viewport.height)
+        return;
+    
+    double max_width = _imm_ctx->viewport.width - rect.x;
+    NSUInteger w = (NSUInteger) (max_width < rect.w ? max_width : rect.w);
+    double max_height = _imm_ctx->viewport.height - rect.y;
+    NSUInteger h = (NSUInteger) (max_height < rect.h ? max_height : rect.h);
+    MTLScissorRect r = { (NSUInteger)rect.x, (NSUInteger)rect.y, w, h };
+    [_imm_ctx->currentRenderCommandEncoder setScissorRect:r];
 }
 
 
@@ -215,10 +181,10 @@ static int text_height_cb(mu_Font font) {
 }
 
 static mu_Context ctx;
-extern "C" mu_Context* lab_microui_init(LabFontState * fs)
+extern "C" mu_Context* lab_microui_init(LabImmDrawContext* imm_ctx, LabFontState * fs)
 {
     /* setup microui renderer */
-    r_init(fs);
+    r_init(imm_ctx, fs);
 
     /* setup microui */
     mu_init(&ctx);
