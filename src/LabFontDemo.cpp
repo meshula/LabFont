@@ -44,7 +44,7 @@ void font_demo_init(const char* path_)
             csr_path.c_str(), LabFontType{ LabFontTypeTTF });
     
     static std::string r18_path = path + "hauer-12.png";// "robot-18.png";
-    font_demo.font_robot18 = LabFontLoad("robot-18", 
+    font_demo.font_robot18 = LabFontLoad("hauer-12", 
             r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });
     
     font_demo.font_c64 = LabFontLoad("c64", nullptr, LabFontType{ LabFontTypeSokol8x8 });
@@ -122,7 +122,7 @@ void fontDemo(LabFontDrawState* ds, float& dx, float& dy, float sx, float sy) {
     dy = 350 * dpis;
     line(dx - 10 * dpis, dy, dx + 250 * dpis, dy);
     dx = LabFontDraw(ds, "Top", dx, dy, p2_st);
-    static LabFontState* g2_st = LabFontStateBake(font_demo.font_robot18, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignMiddle }, 0, 0);
+    static LabFontState* g2_st = LabFontStateBake(font_demo.font_c64, sz, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignMiddle }, 0, 0);
     dx += 10 * dpis;
     dx = LabFontDraw(ds, "Middle", dx, dy, g2_st);
     dx += 10 * dpis;

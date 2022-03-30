@@ -84,7 +84,7 @@ lab_imm_MTLRenderCommandEncoder_set(
     id<MTLRenderCommandEncoder> _Nullable);
 
 void
-ab_imm_viewport_set(
+lab_imm_viewport_set(
     LabImmPlatformContext* _Nonnull mtl,
     float originX, float originY, float w, float h);
 
@@ -236,6 +236,7 @@ LabImmPlatformContextCreate(
                                                 width:width
                                                height:height
                                             mipmapped:NO];
+        descriptor.storageMode = MTLStorageModeShared;
         mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE] = [mtl->device newTextureWithDescriptor:descriptor];
         return mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE] == nil ? 0 : 1;
     };
@@ -302,7 +303,7 @@ void lab_imm_MTLRenderCommandEncoder_set(LabImmPlatformContext* _Nonnull mtl,
     mtl->currentRenderCommandEncoder = commandEncoder;
 }
 
-void ab_imm_viewport_set(LabImmPlatformContext* _Nonnull mtl,
+void lab_imm_viewport_set(LabImmPlatformContext* _Nonnull mtl,
         float originX, float originY, float w, float h) {
     mtl->viewport.originX = originX;
     mtl->viewport.originY = originY;
@@ -318,6 +319,7 @@ int LabImmCreateAtlas(LabImmPlatformContext* _Nonnull mtl, int slot, int width, 
                                                            width:width
                                                           height:height
                                                        mipmapped:NO];
+    descriptor.storageMode = MTLStorageModeShared;
     mtl->atlasTexture[slot] = [mtl->device newTextureWithDescriptor:descriptor];
     if (mtl->atlasTexture[slot] == nil) {
         return 0;

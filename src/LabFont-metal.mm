@@ -324,6 +324,7 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                                                  width:x
                                                 height:y
                                              mipmapped:NO];
+            descriptor.storageMode = MTLStorageModeShared;
 
             r->texture = [LabFontInternal::_imm_ctx->device
                                 newTextureWithDescriptor:descriptor];
@@ -429,7 +430,8 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                                                 height: 8 * 8
                                              mipmapped:NO];
 
-            mtl_texture = [LabFontInternal::_imm_ctx->device
+           descriptor.storageMode = MTLStorageModeShared;
+           mtl_texture = [LabFontInternal::_imm_ctx->device
                                 newTextureWithDescriptor:descriptor];
             
             if (mtl_texture == nil) {

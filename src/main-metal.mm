@@ -22,6 +22,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 #include <IOKit/hid/IOHIDLib.h>
 
+#include <atomic>
 #include <queue>
 #include <string>
 #include <vector>
@@ -105,6 +106,142 @@ static void zep_window(mu_Context* ctx)
     }
 }
 
+@interface LabFontDemoRenderer : NSObject
+@property (nonatomic, strong) id<MTLDevice> device;
+@property (nonatomic, strong) id<MTLCommandQueue> commandQueue;
+@property (nonatomic, assign) MTLPixelFormat colorPixelFormat;
+@end
+
+@implementation LabFontDemoRenderer {
+    FONScontext* fs;
+    int fontNormal;
+    int fontItalic;
+    int fontBold;
+    int fontJapanese;
+    LabImmDrawContext* imm_ctx;
+    std::atomic<int> _lock;
+}
+
+- (instancetype)init {
+    if (self = [super init]) {
+        self->_lock = 0;
+        self.device = MTLCreateSystemDefaultDevice();
+        self.commandQueue = [self.device newCommandQueue];
+        self.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
+
+        // font atlas size 1024x1024
+        self->imm_ctx = LabImmPlatformContextCreate(self.device, 1024, 1024);
+        LabFontInitMetal(self->imm_ctx, self.colorPixelFormat);
+
+        const char* rsrc_str = lab_application_resource_path(g_app_path.c_str(),
+                                                             "share/lab_font_demo");
+        if (!rsrc_str) {
+            printf("resource path not found relative to %s\n", g_app_path.c_str());
+            exit(0);
+        }
+        std::string rsrc(rsrc_str);
+
+        LabImmDrawSetRenderTargetPixelFormat(self->imm_ctx, MTLPixelFormatBGRA8Unorm);
+        font_demo_init(rsrc.c_str());
+            
+        static std::string asset_root(rsrc_str);
+        static std::string r18_path = asset_root + "/hauer-12.png";// "/robot-18.png";
+        static LabFont* font_robot18 = LabFontLoad("robot-18", r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });
+        int fontPixelHeight = 18;
+        microui_font_bake = LabFontStateBake(font_robot18,
+            (float)fontPixelHeight, { {255, 255, 255, 255} },
+            LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
+
+        // Zep
+        fontPixelHeight = 18;
+        //static LabFontState* zep_st = LabFontStateBake(state.font_cousine, (float) fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
+        static LabFontState* zep_st = LabFontStateBake(font_robot18, (float)fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
+        zep = LabZep_create(self->imm_ctx, zep_st, "Shader.frag", shader.c_str());
+    }
+    return self;
+}
+
+-(void)drawRect:(NSRect)dirtyRect drawableSize:(CGSize)rect drawable:(id<CAMetalDrawable>)drawable {
+    // reentrancy guard
+    {
+        int locked = 0;
+        if (!self->_lock.compare_exchange_strong(locked, 1))
+            return;
+    }
+    
+    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(0.3, 0.3, 0.32, 1.0);
+    pass.colorAttachments[0].loadAction  = MTLLoadActionClear;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    pass.colorAttachments[0].texture = drawable.texture;
+
+    id<MTLCommandBuffer> commandBuffer = [self.commandQueue commandBuffer];
+    id<MTLRenderCommandEncoder> renderCommandEncoder =
+                    [commandBuffer renderCommandEncoderWithDescriptor:pass];
+
+    int width = rect.width;
+    int height = rect.height;
+    
+    LabFontDrawBeginMetal(renderCommandEncoder);
+    lab_imm_MTLRenderCommandEncoder_set(self->imm_ctx, renderCommandEncoder);
+    auto ds = LabFontDrawBegin(0, 0, width, height);
+
+    float dx = 0;
+    float dy = 50;
+    float sx = 150;
+    float sy = 150;
+    fontDemo(ds, dx, dy, sx, sy);
+
+    lab_imm_viewport_set(self->imm_ctx, 0, 0, width, height);
+    size_t buff_size = lab_imm_size_bytes(256);
+    static vector<float> buff;
+    buff.resize(buff_size);
+    LabImmContext lic;
+    
+    lab_imm_batch_begin(&lic, self->imm_ctx, 257, labprim_linestrip, false, buff.data());
+    lab_imm_c4f(&lic, 1.f, 1.f, 0.f, 1.f);
+    for (int i = 0; i < 257; ++i) {
+        float th = 6.282f * (float) i / 256.f;
+        float s = sinf(th);
+        float c = cosf(th);
+        lab_imm_v2f(&lic, 250 + 150 * s, 250 + 150 * c);
+    }
+    lab_imm_batch_draw(&lic, 1, true);
+
+    lab_imm_batch_begin(&lic, self->imm_ctx, 257, labprim_triangles, false, buff.data());
+    lab_imm_c4f(&lic, 1.f, 1.f, 0.f, 1.f);
+    lab_imm_line(&lic, 200,500, 300, 600, 20);
+    lab_imm_line(&lic, 200,600, 300, 500, 20);
+    lab_imm_batch_draw(&lic, 1, true);     // texture slot 1 ~~ solid color
+    
+    // microui layer
+    if (!state.mu_ctx) {
+        state.mu_ctx = lab_microui_init(self->imm_ctx, microui_font_bake);
+        state.mu_ctx->style->size.y = 18; // widget height
+    }
+    if (state.mu_ctx) {
+        /* UI definition */
+        mu_begin(state.mu_ctx);
+
+        microui_test_window(state.mu_ctx);
+        log_window(state.mu_ctx);
+        zep_window(state.mu_ctx);
+        microui_style_window(state.mu_ctx);
+        mu_end(state.mu_ctx);
+
+        lab_microui_render(ds, width, height, zep);
+    }
+    
+    LabFontDrawEnd(ds);
+    
+    [renderCommandEncoder endEncoding];
+    [commandBuffer presentDrawable:drawable];
+    [commandBuffer commit];
+    
+    self->_lock = 0;
+}
+
+@end
 
 /* __     ___                */
 /* \ \   / (_) _____      __ */
@@ -113,21 +250,12 @@ static void zep_window(mu_Context* ctx)
 /*    \_/  |_|\___| \_/\_/   */
 
 @interface LabFontDemoView : NSView
-@property (nonatomic, strong) id<MTLDevice> device;
-@property (nonatomic, strong) id<MTLCommandQueue> commandQueue;
-@property (nonatomic, assign) MTLPixelFormat colorPixelFormat;
 @end
 
 
 @implementation LabFontDemoView
 {
-    FONScontext* fs;
-    int fontNormal;
-    int fontItalic;
-    int fontBold;
-    int fontJapanese;
-    LabImmDrawContext* imm_ctx;
-
+    LabFontDemoRenderer* _renderer;
     bool _command_down;
     bool _shift_down;
     bool _control_down;
@@ -162,9 +290,7 @@ static void zep_window(mu_Context* ctx)
 }
 
 - (void)commonMetalViewInit {
-    self.device = MTLCreateSystemDefaultDevice();
-    self.commandQueue = [self.device newCommandQueue];
-    self.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
+    self->_renderer = [LabFontDemoRenderer new];
     self.layer = [self makeBackingLayer];
     self.layer.magnificationFilter = kCAFilterNearest;
     self.translatesAutoresizingMaskIntoConstraints = false;
@@ -175,40 +301,10 @@ static void zep_window(mu_Context* ctx)
     //self.sampleCount = 1;
     //self.autoResizeDrawable = false;
 
-    // font atlas size 1024x1024
-    self->imm_ctx = LabImmPlatformContextCreate(self.device, 1024, 1024);
-    
     self->_shift_down = false;
     self->_option_down = false;
     self->_control_down = false;
     self->_command_down = false;
-
-    LabFontInitMetal(self->imm_ctx, self.colorPixelFormat);
-
-    const char* rsrc_str = lab_application_resource_path(g_app_path.c_str(),
-                                                         "share/lab_font_demo");
-    if (!rsrc_str) {
-        printf("resource path not found relative to %s\n", g_app_path.c_str());
-        exit(0);
-    }
-    std::string rsrc(rsrc_str);
-
-    LabImmDrawSetRenderTargetPixelFormat(self->imm_ctx, MTLPixelFormatBGRA8Unorm);
-    font_demo_init(rsrc.c_str());
-        
-    static std::string asset_root(rsrc_str);
-    static std::string r18_path = asset_root + "/hauer-12.png";// "/robot-18.png";
-    static LabFont* font_robot18 = LabFontLoad("robot-18", r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });
-    int fontPixelHeight = 18;
-    microui_font_bake = LabFontStateBake(font_robot18,
-        (float)fontPixelHeight, { {255, 255, 255, 255} },
-        LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
-
-    // Zep
-    fontPixelHeight = 18;
-    //static LabFontState* zep_st = LabFontStateBake(state.font_cousine, (float) fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
-    static LabFontState* zep_st = LabFontStateBake(font_robot18, (float)fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
-    zep = LabZep_create(self->imm_ctx, zep_st, "Shader.frag", shader.c_str());
 }
 
 - (void)viewDidMoveToWindow {
@@ -226,8 +322,8 @@ static void zep_window(mu_Context* ctx)
     [super setNeedsDisplay:needsDisplay];
     if (needsDisplay && self.window != nil) {
         if (self.metalLayer.device == nil) {
-            self.metalLayer.device = self.device;
-            self.metalLayer.pixelFormat = self.colorPixelFormat;
+            self.metalLayer.device = _renderer.device;
+            self.metalLayer.pixelFormat = _renderer.colorPixelFormat;
         }
         CGFloat scale = fmax(1, self.window.backingScaleFactor);
         CGSize boundsSize = self.bounds.size;
@@ -482,74 +578,9 @@ uint8_t translateKey(NSEvent* event) {
         return;
     }
 
-    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
-    pass.colorAttachments[0].clearColor = MTLClearColorMake(0.3, 0.3, 0.32, 1.0);
-    pass.colorAttachments[0].loadAction  = MTLLoadActionClear;
-    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-    pass.colorAttachments[0].texture = drawable.texture;
-
-    id<MTLCommandBuffer> commandBuffer = [self.commandQueue commandBuffer];
-    id<MTLRenderCommandEncoder> renderCommandEncoder = 
-                    [commandBuffer renderCommandEncoderWithDescriptor:pass];
-
-    CGSize drawableSize = self.metalLayer.drawableSize;
-    int width = drawableSize.width, height = drawableSize.height;
-
-    LabFontDrawBeginMetal(renderCommandEncoder);
-    lab_imm_MTLRenderCommandEncoder_set(self->imm_ctx, renderCommandEncoder);
-    auto ds = LabFontDrawBegin(0, 0, width, height);
-
-    float dx = 0;
-    float dy = 50;
-    float sx = 150;
-    float sy = 150;
-    fontDemo(ds, dx, dy, sx, sy);
-
-    ab_imm_viewport_set(self->imm_ctx, 0, 0, width, height);
-    size_t buff_size = lab_imm_size_bytes(256);
-    static vector<float> buff;
-    buff.resize(buff_size);
-    LabImmContext lic;
-    
-    lab_imm_batch_begin(&lic, self->imm_ctx, 257, labprim_linestrip, false, buff.data());
-    lab_imm_c4f(&lic, 1.f, 1.f, 0.f, 1.f);
-    for (int i = 0; i < 257; ++i) {
-        float th = 6.282f * (float) i / 256.f;
-        float s = sinf(th);
-        float c = cosf(th);
-        lab_imm_v2f(&lic, 250 + 150 * s, 250 + 150 * c);
-    }
-    lab_imm_batch_draw(&lic, 1, true);
-
-    lab_imm_batch_begin(&lic, self->imm_ctx, 257, labprim_triangles, false, buff.data());
-    lab_imm_c4f(&lic, 1.f, 1.f, 0.f, 1.f);
-    lab_imm_line(&lic, 200,500, 300, 600, 20);
-    lab_imm_line(&lic, 200,600, 300, 500, 20);
-    lab_imm_batch_draw(&lic, 1, true);     // texture slot 1 ~~ solid color
-    
-    // microui layer
-    if (!state.mu_ctx) {
-        state.mu_ctx = lab_microui_init(self->imm_ctx, microui_font_bake);
-        state.mu_ctx->style->size.y = 18; // widget height
-    }
-    if (state.mu_ctx) {
-        /* UI definition */
-        mu_begin(state.mu_ctx);
-
-        microui_test_window(state.mu_ctx);
-        log_window(state.mu_ctx);
-        zep_window(state.mu_ctx);
-        microui_style_window(state.mu_ctx);
-        mu_end(state.mu_ctx);
-
-        lab_microui_render(ds, width, height, zep);
-    }
-    
-    LabFontDrawEnd(ds);
-    
-    [renderCommandEncoder endEncoding];
-    [commandBuffer presentDrawable:drawable];
-    [commandBuffer commit];
+    // drawableSize has had the dpi multiplied in already, see above
+    CGSize sz = self.metalLayer.drawableSize;
+    [_renderer drawRect:dirtyRect drawableSize:sz drawable:drawable];
 }
 
 @end

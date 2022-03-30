@@ -41,7 +41,7 @@ void r_init(LabImmDrawContext* imm_ctx, LabFontState * font_) {
 
 extern "C"
 void r_begin(LabFontDrawState* ds, int width, int height) {
-    ab_imm_viewport_set(_imm_ctx, 0, 0, width, height);
+    lab_imm_viewport_set(_imm_ctx, 0, 0, width, height);
 }
 
 extern "C"
