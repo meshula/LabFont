@@ -275,7 +275,7 @@ static int text_height_cb(mu_Font font) {
 }
 
 static mu_Context ctx;
-extern "C" mu_Context* lab_microui_init(LabFontState * fs)
+extern "C" mu_Context* lab_microui_init(LabImmPlatformContext* imm_ctx, LabFontState* fs)
 {
     /* setup microui renderer */
     r_init(fs);

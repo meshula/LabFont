@@ -10,6 +10,8 @@
 
 #define LABIMMDRAW_IMPL
 #include "../LabDrawImmediate.h"
+#define LABIMMDRAW_SOKOL_IMPL
+#include "../LabDrawImmediate-sokol.h"
 
 #include <queue>
 #include <string>
@@ -148,11 +150,12 @@ static void init()
     static LabFont* font_robot18 = LabFontLoad("robot-18", r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });
 
     int fontPixelHeight = 18;
-    static LabFontState* microui_st = LabFontStateBake(font_robot18,
+    static LabFontState* microui_font_bake = LabFontStateBake(font_robot18,
         (float)fontPixelHeight, { {255, 255, 255, 255} },
         LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
 
-    state.mu_ctx = lab_microui_init(microui_st);
+    state.mu_ctx = lab_microui_init(state.imm_ctx, microui_font_bake);
+    state.mu_ctx->style->size.y = 18; // widget height
 
     // Zep
     fontPixelHeight = 18;

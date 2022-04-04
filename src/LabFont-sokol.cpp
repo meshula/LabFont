@@ -5,11 +5,11 @@
 #include "../LabSokol.h"
 
 #include <stddef.h>
+#include <malloc.h>
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash.h"
 #define SOKOL_IMPL
 #ifndef SOKOL_METAL
-xxx
 #endif
 #include "sokol_fontstash.h"
 #undef SOKOL_IMPL

@@ -6,7 +6,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(LABFONT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 option(LABFONT_SOKOL "Use Sokol as the renderer" OFF)
-option(LABFONT_METAL "Use Metal as the renderer" ON)
+option(LABFONT_METAL "Use Metal as the renderer" OFF)
+option(LABFONT_VULKAN "Use Vulkan as the renderer" ON)
 
 # Don't report that sample file installation up to date
 set(CMAKE_INSTALL_MESSAGE LAZY)
@@ -29,6 +30,8 @@ if (LABFONT_SOKOL)
     include(sokol.cmake)
 
     set(LABFONT_PLATFORM_SRC
+        LabDrawImmediate-sokol.h
+        LabSokol.h
         src/main-sokol.cpp
         src/LabFont-sokol.cpp
         src/lab_microui-sokol.cpp)
@@ -40,17 +43,24 @@ endif()
 
 if (LABFONT_METAL)
     set(LABFONT_PLATFORM_SRC
+        LabDrawImmediate-metal.h
         src/main-metal.mm
         src/LabFont-metal.mm
         src/lab_microui-metal.mm)
     set(ST_GFX_DEFS LABFONT_HAVE_METAL)
 endif()
 
+if (LABFONT_VULKAN)
+    find_package(Vulkan REQUIRED)
+    set(LABFONT_PLATFORM_SRC
+        LabDrawImmediate-vulkan.h
+        src/main-vulkan.cpp
+        src/LabFont-vulkan.cpp)
+endif()
+
 set(SRC
     LabDrawImmediate.h
-    LabDrawImmediate-metal.h
     LabFont.h
-    LabSokol.h
     LabZep.h
     ${LABFONT_PLATFORM_SRC}
     src/fontstash.h
@@ -139,6 +149,12 @@ else()
         "-lstdc++" ${LIBS} ${LABFONT_PLATFORM_LIBS} Zep::Zep)
     #    "-lglfw" "-lavcodec" "-lavformat" "-lswscale" ${LIBS})
 endif()
+
+if (LABFONT_VULKAN)
+    target_include_directories(LabFontDemo PRIVATE "${Vulkan_INCLUDE_DIR}")
+    target_link_libraries(LabFontDemo PRIVATE "${Vulkan_LIBRARIES}")
+endif()
+
 
 install(TARGETS LabFontDemo 
          RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin

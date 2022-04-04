@@ -8,6 +8,7 @@
 #define LAB_EXTERNC
 #endif
 
+#include <math.h>
 #include <stdint.h>
 #include <stddef.h>
 
@@ -96,7 +97,9 @@ _Pragma("clang assume_nonnull end")
 
 #endif
 
-#ifdef LABIMMDRAW_IMPL
+#if defined(LABIMMDRAW_IMPL) && !defined(LABIMMDRAW_IMPLEMENTED)
+#define LABIMMDRAW_IMPLEMENTED
+
 
 #include <string.h>
 

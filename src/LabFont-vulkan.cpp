@@ -4,21 +4,18 @@
 #include "../LabFont.h"
 
 #include <stddef.h>
+#include <malloc.h>
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash.h"
 
-//#define MTLFONTSTASH_IMPLEMENTATION
-//#include "mtlfontstash.h"
-
 #include "../LabDrawImmediate.h"
-#include "../LabDrawImmediate-metal.h"
+#include "../LabDrawImmediate-vulkan.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #include "rapidjson/document.h"
 
-#import <Metal/Metal.h>
 #include <array>
 #include <map>
 #include <string>
@@ -39,7 +36,6 @@ namespace lf_internal {
 
 typedef struct LabFont
 {
-    id<MTLTexture> texture;
     int texture_slot;
     
     int id;           // >= zero for a TTF
@@ -64,9 +60,7 @@ struct LabFontState
 
 namespace LabFontInternal {
 
-    LabImmDrawContext* _imm_ctx = nullptr;
-    id<MTLRenderCommandEncoder> _command_encoder = nil;
-    MTLPixelFormat _format;
+    LabImmPlatformContext* _imm_ctx = nullptr;
 
     struct LoadResult { uint8_t* buff; size_t len; };
     LoadResult load(const char* path)
@@ -142,33 +136,15 @@ namespace LabFontInternal {
 }
 
 extern "C"
-void LabFontInitMetal(LabImmDrawContext* imm_ctx, MTLPixelFormat fmt) {
-    LabFontInternal::_imm_ctx = imm_ctx;
-    LabFontInternal::_format = fmt;
-}
-
-extern "C"
-void LabFontDrawBeginMetal(id<MTLRenderCommandEncoder> enc) {
-    LabFontInternal::_command_encoder = enc;
-}
-
-extern "C"
 LabFontDrawState* LabFontDrawBegin(float ox, float oy, float w, float h)
 {
-    MTLViewport viewport = {
-        .originX = ox, .originY = oy,
-        .height = h, .width = w
-    };
     FONScontext* fc = LabFontInternal::fontStash();
-    //mtlfonsSetRenderCommandEncoder(fc,
-    //            LabFontInternal::_command_encoder, viewport);
     fonsClearState(fc);
     
     return nullptr;
 }
 
 void LabFontDrawEnd(LabFontDrawState* st) {
-    LabFontInternal::_command_encoder = nil;
 }
 
 extern "C"
@@ -317,7 +293,8 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                 int addr = i * 4;
                 data[addr + 3] = data[addr] == 0 ? 0 : 255;
             }
-            
+
+#if 0
             MTLTextureDescriptor *descriptor =
                 [MTLTextureDescriptor
                     texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
@@ -328,7 +305,7 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
 
             r->texture = [LabFontInternal::_imm_ctx->device
                                 newTextureWithDescriptor:descriptor];
-            
+
             if (r->texture == nil) {
                 printf("Could not create a Metal texture of size %d x %d\n", x, y);
                 stbi_image_free(data);
@@ -344,7 +321,8 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                           mipmapLevel:0
                             withBytes:data
                           bytesPerRow:x * 4];
-            
+#endif
+
             r->img_w = x;
             r->img_h = y;
             r->charsz_x = x / 32;
@@ -406,7 +384,6 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
         using namespace lf_internal;
         static bool unpack = true;
         static uint8_t* texture = nullptr;
-        static id<MTLTexture> mtl_texture = nil;
         static int mtl_texture_slot = 0;
         LabFont* r = (LabFont*)calloc(1, sizeof(LabFont));
         if (!r)
@@ -422,7 +399,7 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
             sokol8x8_unpack_font(sokol_font_cpc,   0, 0xff, texture + 2048 * 8 * 3);
             sokol8x8_unpack_font(sokol_font_c64,   0, 0xff, texture + 2048 * 8 * 4);
             sokol8x8_unpack_font(sokol_font_oric,  0, 0xff, texture + 2048 * 8 * 5);
-
+#if 0
             MTLTextureDescriptor *descriptor =
                 [MTLTextureDescriptor
                     texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
@@ -448,11 +425,13 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                            mipmapLevel:0
                              withBytes:texture
                            bytesPerRow:256 * 8];
+#endif
 
             unpack = false;
         }
-
+#if 0
         r->texture = mtl_texture;
+#endif
         r->texture_slot = mtl_texture_slot;
         r->id = -2;
         r->img_w = 256 * 8;
@@ -501,8 +480,10 @@ static bool qp_must_init = true;
 static float sokol_8x8_draw(const char* str, const char* end, 
         LabFontColor* c, float x, float y, LabFontState* fs)
 {
+#if 0
     if (str == nullptr || fs == nullptr || fs->font->texture == nil)
         return x;
+#endif
 
     if (end == nullptr)
         end = str + strlen(str);
@@ -598,9 +579,10 @@ static float sokol_8x8_draw(const char* str, const char* end,
 static float quadplay_font_draw(const char* str, const char* end, 
         LabFontColor* c, float x, float y, LabFontState* fs)
 {
+#if 0
     if (str == nullptr || fs == nullptr || fs->font->texture == nil)
         return x;
-
+#endif
     if (end == nullptr)
         end = str + strlen(str);
 
@@ -609,7 +591,7 @@ static float quadplay_font_draw(const char* str, const char* end,
     uint32_t rgba = *rgba_p;
     int count = end - str;
     if (!count)
-        return 0.f;
+        return 0;
     
     static std::vector<float> verts;
     static std::vector<float> tcoords;
@@ -700,7 +682,7 @@ float LabFontDraw(LabFontDrawState* ds, const char* str, float x, float y, LabFo
         FONScontext* fc = LabFontInternal::fontStash();
         return fonsDrawText(fc, x, y, str, NULL);
     }
-    
+#if 0
     else if (fs->font->texture != nil) {
         if (fs->font->id == -1) {
             return quadplay_font_draw(str, nullptr, &fs->color, x, y, fs);
@@ -709,6 +691,7 @@ float LabFontDraw(LabFontDrawState* ds, const char* str, float x, float y, LabFo
             return sokol_8x8_draw(str, nullptr, &fs->color, x, y, fs);
         }
     }
+    #endif
     return x;
 }
 
@@ -731,6 +714,7 @@ float LabFontDrawSubstringColor(LabFontDrawState* ds,
         fonsSetColor(fc, LabFontInternal::fons_rgba(*c));
         return fonsDrawText(fc, x, y, str, end);
     }
+#if 0
     else if (fs->font->texture != nil) {
         if (fs->font->id == -1) {
             return quadplay_font_draw(str, end, c, x, y, fs);
@@ -739,6 +723,7 @@ float LabFontDrawSubstringColor(LabFontDrawState* ds,
             return sokol_8x8_draw(str, end, c, x, y, fs);
         }
     }
+#endif
     return x;
 }
 
@@ -2413,6 +2398,8 @@ const uint8_t sokol_font_oric[2048] = {
     0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, // FF
 };
 
+#if 0
+
 // Asteroids vector font
 
 /// https://trmm.net/Asteroids_font
@@ -2531,7 +2518,7 @@ void draw_string(const char* str, bool spacing) {
   }
 }
 
-
+#endif
 
 } // end namespace lf_internal
 
