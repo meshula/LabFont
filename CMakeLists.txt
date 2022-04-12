@@ -29,6 +29,7 @@ if (LABFONT_SOKOL)
     include(sokol.cmake)
 
     set(LABFONT_PLATFORM_SRC
+        LabDrawImmediate-sokol.h
         src/main-sokol.cpp
         src/LabFont-sokol.cpp
         src/lab_microui-sokol.cpp)
@@ -40,6 +41,7 @@ endif()
 
 if (LABFONT_METAL)
     set(LABFONT_PLATFORM_SRC
+        LabDrawImmediate-metal.h
         src/main-metal.mm
         src/LabFont-metal.mm
         src/lab_microui-metal.mm)
@@ -48,8 +50,8 @@ endif()
 
 set(SRC
     LabDrawImmediate.h
-    LabDrawImmediate-metal.h
     LabFont.h
+    LabMicroUI.h
     LabSokol.h
     LabZep.h
     ${LABFONT_PLATFORM_SRC}
@@ -93,6 +95,10 @@ if (APPLE)
         "-framework QuartzCore"
         "-framework Carbon"
     )
+
+    if (LABFONT_SOKOL)
+        target_compile_options(LabFontDemo PRIVATE -Wnullability-completeness)
+    endif()
 
     configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/resources/MacBundleInfo.plist.in

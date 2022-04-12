@@ -10,6 +10,8 @@
 
 #define LABIMMDRAW_IMPL
 #include "../LabDrawImmediate.h"
+#define LABIMMDRAW_SOKOL_IMPLEMENTATION
+#include "../LabDrawImmediate-sokol.h"
 
 #include <queue>
 #include <string>
@@ -62,7 +64,7 @@ static struct {
     int logbuf_updated;
     color_t bg = { 90.f, 95.f, 100.f };
     float dpi_scale;
-
+    LabImmPlatformContext* imm_ctx = nullptr;
     mu_Id zep_id;
 } state;
 
@@ -152,7 +154,8 @@ static void init()
         (float)fontPixelHeight, { {255, 255, 255, 255} },
         LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
 
-    state.mu_ctx = lab_microui_init(microui_st);
+    LabImmPlatformContext* imm_ctx;
+    state.mu_ctx = lab_microui_init(imm_ctx, microui_st);
 
     // Zep
     fontPixelHeight = 18;
@@ -160,7 +163,7 @@ static void init()
     static LabFontState* zep_st = LabFontStateBake(font_robot18, (float)fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
 
     // fill in some sample text, a shader
-    zep = LabZep_create(zep_st, "Shader.frag", shader.c_str());
+    zep = LabZep_create(imm_ctx, zep_st, "Shader.frag", shader.c_str());
 }
 
 static void event(const sapp_event* ev) {
@@ -278,7 +281,8 @@ void frame(void) {
     size_t buff_size = lab_imm_size_bytes(256);
     float* buff = (float*) malloc(buff_size);
     LabImmContext lic;
-    lab_imm_begin(&lic, 256, labprim_lines, true, buff);
+    
+    lab_imm_batch_begin(&lic, state.imm_ctx, 257, labprim_linestrip, true, buff);
 
     for (int i = 0; i < 256; ++i) {
         float th = 6.282f * (float) i / 256.f;
@@ -293,7 +297,7 @@ void frame(void) {
     bool can_draw = true;
     switch (lic.prim) {
         case labprim_lines: sgl_begin_lines(); break;
-        case labprim_linestrip: sgl_begin_triangle_strip(); break;
+        case labprim_linestrip: sgl_begin_line_strip(); break;
         case labprim_triangles: sgl_begin_triangles(); break;
         case labprim_tristrip: sgl_begin_triangle_strip(); break;
         default: can_draw = false; break;
@@ -303,7 +307,7 @@ void frame(void) {
         for (int i = 0; i < 256; ++i) {
             sgl_c4b(255, 255, 255, 255);
             sgl_v2f(curr[0], curr[1]);
-            curr += 6;
+            curr += 5;
         }
         sgl_end();
     }

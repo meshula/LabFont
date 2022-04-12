@@ -8,8 +8,9 @@
 #define LAB_EXTERNC
 #endif
 
-#include <stdint.h>
+#include <math.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __clang__
 _Pragma("clang assume_nonnull begin")
