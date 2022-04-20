@@ -7,3 +7,6 @@
 [submodule "third/rapidjson"]
 	path = third/rapidjson
 	url = https://github.com/Tencent/rapidjson.git
+[submodule "third\\vkhelpers"]
+	path = third/vkhelpers
+	url = git@github.com:meshula/vkhelpers.git
