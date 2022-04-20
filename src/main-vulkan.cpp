@@ -8,8 +8,13 @@
 
 #include <stddef.h>
 
+#define VK_USE_PLATFORM_WIN32_KHR
+
+#include "vkh.h"
+#include "vkh_app.h"
+#include "vkh_phyinfo.h"
+
 #include "fontstash.h"
-//#include "mtlfontstash.h"
 
 #define LABIMMDRAW_IMPL
 #include "../LabDrawImmediate.h"
@@ -18,7 +23,6 @@
 
 #define LAB_USE_CONSOLE
 
-#define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
 
 
@@ -149,6 +153,10 @@ typedef struct {
     LONG raw_input_mousepos_x;
     LONG raw_input_mousepos_y;
     uint8_t raw_input_data[256];
+
+    VkhApp vkh_app;
+    VkhPresenter vkh_presenter;
+    VkhDevice vkh_dev;
 } _sapp_win32_t;
 _sapp_win32_t app;
 
@@ -591,13 +599,171 @@ int main(int argc, const char * argv[]) {
     printf("Window (%d, %d), fb (%d, %d)\n", (int)app.window_width,
             (int)app.window_height, app.framebuffer_width, app.framebuffer_height);
 
-    // Create Vulkan surface
-    VkWin32SurfaceCreateInfoKHR createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    createInfo.hwnd = app.hwnd;
-    createInfo.hinstance = GetModuleHandle(nullptr);
 
-    // Create window
+    //-- Vulkan set up
+
+    const char* enabledLayers[32];
+    const char* enabledExts[32];
+    uint32_t enabledExtsCount = 0, enabledLayersCount = 0;
+
+    vkh_layers_check_init();
+#ifdef VKVG_USE_VALIDATION
+    if (vkh_layer_is_present("VK_LAYER_KHRONOS_validation"))
+        enabledLayers[enabledLayersCount++] = "VK_LAYER_KHRONOS_validation";
+#endif
+#ifdef VKVG_USE_MESA_OVERLAY
+    if (vkh_layer_is_present("VK_LAYER_MESA_overlay"))
+        enabledLayers[enabledLayersCount++] = "VK_LAYER_MESA_overlay";
+#endif
+
+#ifdef VKVG_USE_RENDERDOC
+    if (vkh_layer_is_present("VK_LAYER_RENDERDOC_Capture"))
+        enabledLayers[enabledLayersCount++] = "VK_LAYER_RENDERDOC_Capture";
+#endif
+    vkh_layers_check_release();
+
+#if defined(_WIN32)
+    enabledLayers[enabledLayersCount++] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+#elif defined(__ANDROID__)
+    enabledLayers[enabledLayersCount++] = VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
+#elif defined(__linux__)
+    enabledLayers[enabledLayersCount++] = VK_KHR_XCB_SURFACE_EXTENSION_NAME;
+#endif
+
+    enabledExts[enabledExtsCount++] = "VK_EXT_debug_utils";
+
+    app.vkh_app = vkh_app_create(1, 2, "LabFont Demo", enabledLayersCount, enabledLayers, enabledExtsCount, enabledExts);
+
+#if defined(DEBUG) && defined (VKVG_DBG_UTILS)
+    vkh_app_enable_debug_messenger(e->app
+        , VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
+        //| VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
+        //| VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT
+        , VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT
+        | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
+        //| VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT
+        //| VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
+        , NULL);
+#endif
+
+    // Create Vulkan surface
+    VkWin32SurfaceCreateInfoKHR surfaceCreateInfo;
+    memset(&surfaceCreateInfo, 0, sizeof(surfaceCreateInfo));
+    surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    surfaceCreateInfo.hinstance = GetModuleHandle(nullptr);
+    surfaceCreateInfo.hwnd = app.hwnd;
+
+    VkSurfaceKHR surf;
+    VkResult result =
+        vkCreateWin32SurfaceKHR(app.vkh_app->inst, &surfaceCreateInfo, NULL, &surf);
+
+    if (result != VK_SUCCESS) {}
+
+    // VkhPhyInfo** stores common useful physical device informations, queues flags, 
+    // memory properties in a single call for all the devices present on the machine.
+    uint32_t phyCount = 0;
+    VkhPhyInfo * phys = vkh_app_get_phyinfos(app.vkh_app, &phyCount, surf);
+
+    // sample how to fetch the properties:
+    for (uint32_t i = 0; i < phyCount; i++) {
+        //check VkPhysicalDeviceProperties
+        VkPhysicalDeviceProperties pdp = vkh_phyinfo_get_properties(phys[i]);
+        //get VkPhysicalDeviceMemoryProperties
+        VkPhysicalDeviceMemoryProperties mp = vkh_phyinfo_get_memory_properties(phys[i]);
+        //get queue properties
+        uint32_t qCount;
+        VkQueueFamilyProperties* queues_props = vkh_phyinfo_get_queues_props(phys[i], &qCount);
+    }
+
+    float qPriorities[] = { 0.f };
+    VkDeviceQueueCreateInfo pQueueInfos[3];
+    memset(pQueueInfos, 0, sizeof(pQueueInfos));
+    int presentable_queue = -1;
+    int compute_queue = -1;
+    int transfer_queue = -1;
+    int qCount = 0;
+    if (vkh_phyinfo_create_presentable_queues(*phys, 1, qPriorities, &pQueueInfos[qCount])) {
+        presentable_queue = qCount;
+        qCount++;
+    }
+    if (vkh_phyinfo_create_compute_queues(*phys, 1, qPriorities, &pQueueInfos[qCount])) {
+        compute_queue = qCount;
+        qCount++;
+    }
+    if (vkh_phyinfo_create_transfer_queues(*phys, 1, qPriorities, &pQueueInfos[qCount])) {
+        transfer_queue = qCount;
+        qCount++;
+    }
+
+    // create logical device
+    char const* dex[] = { "VK_KHR_swapchain" };
+    VkPhysicalDeviceFeatures enabledFeatures;
+    memset(&enabledFeatures, 0, sizeof(enabledFeatures));
+    enabledFeatures.fillModeNonSolid = true;
+    VkDeviceCreateInfo device_info;
+    memset(&device_info, 0, sizeof(device_info));
+    device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    device_info.queueCreateInfoCount = qCount;
+    device_info.pQueueCreateInfos = (VkDeviceQueueCreateInfo*)&pQueueInfos;
+    device_info.enabledExtensionCount = enabledExtsCount;
+    device_info.ppEnabledExtensionNames = dex;
+    device_info.pEnabledFeatures = &enabledFeatures;
+    app.vkh_dev = vkh_device_create(app.vkh_app, *phys, &device_info);
+
+    // phys will has no more use after initialization of the queues.
+    vkh_app_free_phyinfos(phyCount, phys);
+
+    app.vkh_presenter = vkh_presenter_create(app.vkh_dev, presentable_queue, surf,
+        app.window_width, app.window_height, VK_FORMAT_B8G8R8A8_UNORM, VK_PRESENT_MODE_MAILBOX_KHR);
+    
+    // create a blitting command buffer per swapchain images with
+  //  vkh_presenter_build_blit_cmd(app.vkh_presenter, 
+  //      vkvg_surface_get_vk_image(surf), app.window_width, app.window_height);
+
+
+
+#if 0
+    memset(&app.vk_appInfo, 0, sizeof(app.vk_appInfo));
+    app.vk_appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    app.vk_appInfo.pApplicationName = "LabFontDemo";
+    app.vk_appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    app.vk_appInfo.pEngineName = "LabCart";
+    app.vk_appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    app.vk_appInfo.apiVersion = VK_API_VERSION_1_0;
+    std::vector<const char*> enabledExtensions = { VK_KHR_SURFACE_EXTENSION_NAME };
+
+#if defined(_WIN32)
+    enabledExtensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+#elif defined(__ANDROID__)
+    enabledExtensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
+#elif defined(__linux__)
+    enabledExtensions.push_back(VK_KHR_XCB_SURFACE_EXTENSION_NAME);
+#endif
+
+    VkInstanceCreateInfo instanceCreateInfo{};
+    instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    instanceCreateInfo.pApplicationInfo = &app.vk_appInfo;
+    instanceCreateInfo.enabledExtensionCount = enabledExtensions.size();
+    instanceCreateInfo.ppEnabledExtensionNames = enabledExtensions.data();
+    // the second nullptr is to use the default allocator
+    VkResult result = vkCreateInstance(&instanceCreateInfo, nullptr, &app.vk_instance);
+    if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
+        printf(
+            "Cannot find a compatible Vulkan installable client "
+            "driver (ICD). Please make sure your driver supports "
+            "Vulkan before continuing. The call to vkCreateInstance failed.");
+        return EXIT_FAILURE;
+    }
+    else if (result != VK_SUCCESS) {
+        printf(
+            "The call to vkCreateInstance failed. Please make sure "
+            "you have a Vulkan installable client driver (ICD) before "
+            "continuing.");
+        return EXIT_FAILURE;
+    }
+#endif
+
+    // show the window
     ShowWindow(app.hwnd, SW_SHOW);
     DragAcceptFiles(app.hwnd, 1);
 
@@ -626,10 +792,17 @@ int main(int argc, const char * argv[]) {
         }
     }
 
+    vkh_presenter_destroy(app.vkh_presenter);
+    vkDestroySurfaceKHR(app.vkh_app->inst, surf, NULL);
+
+    vkh_device_destroy(app.vkh_dev);
+
     // destroy window
     DestroyWindow(app.hwnd);
     app.hwnd = 0;
     UnregisterClassW(L"LABFONTDEMO_APP", GetModuleHandleW(NULL));
+
+    vkh_app_destroy(app.vkh_app);
 
     // console tear down
     SetConsoleOutputCP(app.orig_codepage);

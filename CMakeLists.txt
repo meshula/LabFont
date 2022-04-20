@@ -7,10 +7,14 @@ set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(LABFONT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 option(LABFONT_SOKOL "Use Sokol as the renderer" OFF)
 option(LABFONT_METAL "Use Metal as the renderer" OFF)
-option(LABFONT_VULKAN "Use Vulkan as the renderer" ON)
+option(LABFONT_VULKAN "Use Vulkan as the renderer" OFF)
 
 # Don't report that sample file installation up to date
 set(CMAKE_INSTALL_MESSAGE LAZY)
+
+if (!(LABFONT_SOKOL OR LABFONT_METAL OR LABFONT_VULKAN))
+    message(FATAL "Must select a renderer")
+endif()
 
 if (LABFONT_SOKOL AND LABFONT_METAL)
     message(FATAL "Cannot select Sokol and Metal simultaneously")
@@ -52,6 +56,7 @@ endif()
 
 if (LABFONT_VULKAN)
     find_package(Vulkan REQUIRED)
+    include(vkhelpers.cmake)
     set(LABFONT_PLATFORM_SRC
         LabDrawImmediate-vulkan.h
         src/main-vulkan.cpp
@@ -152,7 +157,7 @@ endif()
 
 if (LABFONT_VULKAN)
     target_include_directories(LabFontDemo PRIVATE "${Vulkan_INCLUDE_DIR}")
-    target_link_libraries(LabFontDemo PRIVATE "${Vulkan_LIBRARIES}")
+    target_link_libraries(LabFontDemo PRIVATE vkhelpers "${Vulkan_LIBRARIES}")
 endif()
 
 
