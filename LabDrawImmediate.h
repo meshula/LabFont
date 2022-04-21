@@ -34,6 +34,8 @@ typedef enum {
     labprim_tristrip,
 } LabPrim;
 
+typedef struct { float x, y, z, w; } labimm_v4f;
+
 struct LabImmPlatformContext;
 typedef struct LabImmPlatformContext LabImmPlatformContext;
 

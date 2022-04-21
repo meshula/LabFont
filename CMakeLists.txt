@@ -8,7 +8,7 @@ set(LABFONT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 option(LABFONT_SOKOL "Use Sokol as the renderer" OFF)
 option(LABFONT_METAL "Use Metal as the renderer" ON)
 
-# Don't report that sample file installation up to date
+# Don't noisily report that sample files installation is up to date
 set(CMAKE_INSTALL_MESSAGE LAZY)
 
 if (LABFONT_SOKOL AND LABFONT_METAL)
@@ -97,7 +97,7 @@ if (APPLE)
     )
 
     if (LABFONT_SOKOL)
-        target_compile_options(LabFontDemo PRIVATE -Wnullability-completeness)
+        target_compile_options(LabFontDemo PRIVATE -Wno-nullability-completeness)
     endif()
 
     configure_file(

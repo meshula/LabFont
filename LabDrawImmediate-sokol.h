@@ -24,6 +24,10 @@ typedef struct FONScontext FONScontext;
 
 typedef struct LabImmPlatformContext {
     FONScontext* fonsContext;
+    labimm_v4f viewport; // x,y,w,h
+    sg_image atlasTexture[ATLAS_SLOT_MAX];
+    bool atlasTexture_needs_refresh[ATLAS_SLOT_MAX];
+    int next_texture_slot;
 } LabImmPlatformContext;
 
 //-----------------------------------------------------------------------------
@@ -76,96 +80,43 @@ LabImmAtlasUpdate(
 #ifdef LABIMMDRAW_SOKOL_IMPLEMENTATION
 
 #include "fontstash.h"
-
-#if 0
-
-// The length of the circular vertex attribute buffer shared by
-// glyphs rendered from this stash. 1MB equals about 3,000 glyphs.
-#define MTLFONS_BUFFER_LENGTH (4 * 1024 * 1024)
-
-static NSString *shaderSource = @""
-    "#include <metal_stdlib>\n"
-    "using namespace metal;\n"
-    "\n"
-    "struct Vertex {\n"
-    "    float2 position  [[attribute(0)]];\n"
-    "    float2 texCoords [[attribute(1)]];\n"
-    "    half4 color      [[attribute(2)]];\n"
-    "};\n"
-    "\n"
-    "struct VertexOut {\n"
-    "    float4 position [[position]];\n"
-    "    float2 texCoords;\n"
-    "    half4 color;\n"
-    "};\n"
-    "\n"
-    "vertex VertexOut mtlfontstash_vertex(Vertex in [[stage_in]],\n"
-    "                                     constant float4x4 &projectionMatrix [[buffer(1)]])\n"
-    "{\n"
-    "    VertexOut out;\n"
-    "    out.position = projectionMatrix * float4(in.position, 0.0, 1.0);\n"
-    "    out.texCoords = in.texCoords;\n"
-    "    out.color = in.color;\n"
-    "    return out;\n"
-    "}\n"
-    "\n"
-    "typedef VertexOut FragmentIn;\n"
-    "\n"
-    "fragment half4 mtlfontstash_fragment(\n"
-    "                  FragmentIn in [[stage_in]],\n"
-    "                  constant int& texture_slot [[buffer(1)]],\n"
-    "                  constant float& closest_linear [[buffer(2)]],\n"
-    "                  array<texture2d<half, access::sample>,16> atlasTexture [[texture(0)]])\n"
-    "{\n"
-    "    constexpr sampler linearSampler(coord::normalized, filter::linear, address::clamp_to_edge);\n"
-    "    half mask_lin = atlasTexture[texture_slot].sample(linearSampler, in.texCoords).r;\n"
-    "    constexpr sampler closestSampler(coord::normalized, filter::nearest, address::clamp_to_edge);\n"
-    "    half mask_closest = atlasTexture[texture_slot].sample(closestSampler, in.texCoords).r;\n"
-    "    half mask = mask_lin * closest_linear + mask_closest * (1.f - closest_linear);"
-    "    half4 color = in.color * mask;\n"
-    "    return color;\n"
-    "}";
-
+#include "src/labimm-shd.h"
 
 typedef struct {
     float x, y;
     float tx, ty;
     unsigned int rgba;
-} MTLFONSvertex;
+} LabImmFONSvertex;
 
-static simd_float4x4
-float4x4_ortho_projection(float left, float top, float right, float bottom, float near, float far)
+void
+float4x4_ortho_projection(float* mat, float left, float top, float right, float bottom, float near, float far)
 {
+    if (!mat)
+        return;
+
     float xs = 2 / (right - left);
     float ys = 2 / (top - bottom);
     float zs = 1 / (near - far);
     float tx = (left + right) / (left - right);
     float ty = (top + bottom) / (bottom - top);
     float tz = near / (near - far);
-    simd_float4x4 P = {{
-        { xs,  0,  0, 0 },
-        {  0, ys,  0, 0 },
-        {  0,  0, zs, 0 },
-        { tx, ty, tz, 1 },
-    }};
-    return P;
+    mat[0] = xs; mat[1] = 0; mat[2] = 0; mat[3] = 0;
+    mat[4] = 0;  mat[5] = ys; mat[6] = 0; mat[7] = 0;
+    mat[8] = 0;  mat[9] = 0;  mat[10] = zs; mat[11] = 0;
+    mat[12] = tx; mat[13] = ty; mat[14] = tz; mat[15] = 1;
 }
 
-LabImmPlatformContext* _Nullable
+LabImmPlatformContext*
 LabImmPlatformContextCreate(
-    id<MTLDevice> _Nonnull device,
     int font_atlas_width, int font_atlas_height)
 {
     LabImmPlatformContext *mtl = (LabImmPlatformContext*)calloc(1, sizeof(LabImmPlatformContext));
-    if (mtl == NULL) {
-        return NULL;
+    if (mtl == nullptr) {
+        return nullptr;
     }
+
     // make a humorously small viewport default
     mtl->viewport = { 0, 0, 640, 480 };
-    mtl->device = device;
-    mtl->pixelFormat = MTLPixelFormatBGRA8Unorm;
-    mtl->vertexBuffer = [device newBufferWithLength:MTLFONS_BUFFER_LENGTH 
-                                            options:MTLResourceStorageModeShared];
 
     // small white block in slot 1
     LabImmCreateAtlas(mtl, ATLAS_CLEAR_TEXTURE, 4, 4);
@@ -185,31 +136,24 @@ LabImmPlatformContextCreate(
 
     params.renderCreate = [](void* ptr, int width, int height) -> int {
         LabImmPlatformContext* mtl = (LabImmPlatformContext*) ptr;
-        MTLTextureDescriptor *descriptor = [MTLTextureDescriptor
-                   texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
-                                                width:width
-                                               height:height
-                                            mipmapped:NO];
-        descriptor.storageMode = MTLStorageModeShared;
-        mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE] = [mtl->device newTextureWithDescriptor:descriptor];
-        return mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE] == nil ? 0 : 1;
+        sg_image_desc image_desc;
+        memset(&image_desc, 0, sizeof(image_desc));
+        image_desc.width = width;
+        image_desc.height = height;
+        image_desc.pixel_format = SG_PIXELFORMAT_R8;
+        image_desc.usage = SG_USAGE_STREAM;
+        image_desc.min_filter = SG_FILTER_LINEAR;
+        image_desc.mag_filter = SG_FILTER_LINEAR;
+        image_desc.wrap_u = SG_WRAP_CLAMP_TO_EDGE;
+        image_desc.wrap_v = SG_WRAP_CLAMP_TO_EDGE;
+        mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE] = sg_make_image(&image_desc);
+        return mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE].id == SG_INVALID_ID ? 0 : 1;
     };
     params.renderResize = params.renderCreate;
 
     params.renderUpdate = [](void* ptr, int* rect, const unsigned char* data) {
         LabImmPlatformContext* mtl = (LabImmPlatformContext*) ptr;
-        int w = rect[2] - rect[0];
-        int h = rect[3] - rect[1];
-
-        if (mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE] != nil) {
-            MTLRegion region = MTLRegionMake2D(rect[0], rect[1], w, h);
-            int atlasWidth = (int)mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE].width;
-            unsigned char const* regionData = (data + (rect[1] * atlasWidth)) + rect[0];
-            [mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE] replaceRegion:region
-                                    mipmapLevel:0 
-                                    withBytes:regionData 
-                                    bytesPerRow:atlasWidth];
-        }
+        mtl->atlasTexture_needs_refresh[ATLAS_FONSTASH_TEXTURE] = true;
     };
 
     params.renderDraw = [](void* ptr, 
@@ -231,75 +175,53 @@ LabImmPlatformContextCreate(
     return mtl;
 }
 
-void LabImmPlatformContextDestroy(LabImmPlatformContext* _Nonnull mtl) {
-    mtl->device = nil;
-    mtl->renderPipelineState = nil;
-    mtl->vertexBuffer = nil;
+void LabImmPlatformContextDestroy(LabImmPlatformContext* mtl) {
     for (int i = 0; i < ATLAS_SLOT_MAX; ++i)
-        mtl->atlasTexture[i] = nil;
-    mtl->currentRenderCommandEncoder = nil;
+        if (mtl->atlasTexture[i].id != SG_INVALID_ID)
+            sg_destroy_image(mtl->atlasTexture[i]);
     free(mtl);
 }
 
-void LabImmDrawSetRenderTargetPixelFormat(LabImmPlatformContext* _Nonnull mtl,
-        MTLPixelFormat pixelFormat) {
-    if (mtl == NULL || mtl->pixelFormat == pixelFormat) {
-        return;
-    }
-    mtl->pixelFormat = (MTLPixelFormat)pixelFormat;
-    mtl->renderPipelineState = nil; // must recreate the pipeline
-}
-
-void lab_imm_MTLRenderCommandEncoder_set(LabImmPlatformContext* _Nonnull mtl,
-        id<MTLRenderCommandEncoder> _Nullable commandEncoder) {
-    if (!mtl)
-        return;
-    mtl->currentRenderCommandEncoder = commandEncoder;
-}
-
-void lab_imm_viewport_set(LabImmPlatformContext* _Nonnull mtl,
+void lab_imm_viewport_set(LabImmPlatformContext* mtl,
         float originX, float originY, float w, float h) {
-    mtl->viewport.originX = originX;
-    mtl->viewport.originY = originY;
-    mtl->viewport.width = w;
-    mtl->viewport.height = h;
+    mtl->viewport.x = originX;
+    mtl->viewport.y = originY;
+    mtl->viewport.z = w;
+    mtl->viewport.w = h;
 }
 
-
-int LabImmCreateAtlas(LabImmPlatformContext* _Nonnull mtl, int slot, int width, int height)
+int LabImmCreateAtlas(LabImmPlatformContext* mtl, int slot, int width, int height)
 {
-    MTLTextureDescriptor *descriptor = 
-        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
-                                                           width:width
-                                                          height:height
-                                                       mipmapped:NO];
-    descriptor.storageMode = MTLStorageModeShared;
-    mtl->atlasTexture[slot] = [mtl->device newTextureWithDescriptor:descriptor];
-    if (mtl->atlasTexture[slot] == nil) {
-        return 0;
-    }
-    return 1;
+    if (mtl->atlasTexture[slot].id != SG_INVALID_ID)
+        sg_destroy_image(mtl->atlasTexture[slot]);
+
+    sg_image_desc image_desc;
+    memset(&image_desc, 0, sizeof(image_desc));
+    image_desc.width = width;
+    image_desc.height = height;
+    image_desc.pixel_format = SG_PIXELFORMAT_R8;
+    image_desc.usage = SG_USAGE_STREAM;
+    image_desc.min_filter = SG_FILTER_LINEAR;
+    image_desc.mag_filter = SG_FILTER_LINEAR;
+    image_desc.wrap_u = SG_WRAP_CLAMP_TO_EDGE;
+    image_desc.wrap_v = SG_WRAP_CLAMP_TO_EDGE;
+    mtl->atlasTexture[slot] = sg_make_image(&image_desc);
+    return mtl->atlasTexture[slot].id != SG_INVALID_ID ? 1 : 0;
 }
 
-void LabImmAtlasUpdate(LabImmPlatformContext* _Nonnull mtl,
+void LabImmAtlasUpdate(LabImmPlatformContext* mtl,
     int slot, int srcx, int srcy, int w, int h, const uint8_t* data)
 {
-    if (mtl->atlasTexture[slot] == nil) {
+    if (mtl->atlasTexture[slot].id == SG_INVALID_ID) {
         return;
     }
 
-    MTLRegion region = MTLRegionMake2D(srcx, srcy, w, h);
-    int atlasWidth = (int)mtl->atlasTexture[slot].width;
-    unsigned char const* regionData = (data + (srcy * atlasWidth)) + srcx;
-    [mtl->atlasTexture[slot] replaceRegion:region
-                         mipmapLevel:0 
-                           withBytes:regionData 
-                         bytesPerRow:atlasWidth];
+    mtl->atlasTexture_needs_refresh[slot] = true;
 }
 
 // create the render pipeline, on the fly, if necessary
 static
-id<MTLRenderPipelineState> _Nullable 
+id<MTLRenderPipelineState> 
 LabImmDraw__renderPipelineState(LabImmPlatformContext* mtl)  {
     if (mtl->renderPipelineState != nil) {
         return mtl->renderPipelineState;
@@ -433,5 +355,4 @@ void lab_imm_batch_draw(
 }
 
 
-#endif
 #endif
