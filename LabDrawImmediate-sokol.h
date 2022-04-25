@@ -7,7 +7,8 @@
 #ifndef LABDRAWIMM_SOKOL_H
 #define LABDRAWIMM_SOKOL_H
 
-#import "LabDrawImmediate.h"
+#include "LabDrawImmediate.h"
+#include "sokol_gfx.h"
 
 inline
 unsigned int packRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
@@ -21,14 +22,7 @@ unsigned int packRGBA(unsigned char r, unsigned char g, unsigned char b, unsigne
 
 struct FONSContext;
 typedef struct FONScontext FONScontext;
-
-typedef struct LabImmPlatformContext {
-    FONScontext* fonsContext;
-    labimm_v4f viewport; // x,y,w,h
-    sg_image atlasTexture[ATLAS_SLOT_MAX];
-    bool atlasTexture_needs_refresh[ATLAS_SLOT_MAX];
-    int next_texture_slot;
-} LabImmPlatformContext;
+typedef struct LabImmPlatformContext LabImmPlatformContext;
 
 //-----------------------------------------------------------------------------
 // context management
@@ -75,18 +69,51 @@ LabImmAtlasUpdate(
 
 #endif
 
-//-----------------------------------------------------------------------------
-
+//--------------------------
+//  ___                 _
+// |_ _|_ __ ___  _ __ | |
+//  | || '_ ` _ \| '_ \| |
+//  | || | | | | | |_) | |
+// |___|_| |_| |_| .__/|_|
+//               |_|
 #ifdef LABIMMDRAW_SOKOL_IMPLEMENTATION
 
 #include "fontstash.h"
 #include "src/labimm-shd.h"
 
+
 typedef struct {
     float x, y;
     float tx, ty;
-    unsigned int rgba;
+    uint32_t rgba;
 } LabImmFONSvertex;
+
+typedef struct LabImmPlatformContext {
+    FONScontext* fonsContext;
+
+    sg_image atlasTexture[ATLAS_SLOT_MAX];
+    sg_shader shader;
+    bool atlasTexture_needs_refresh[ATLAS_SLOT_MAX];
+    int next_texture_slot;
+
+    labimm_v4f viewport; // x,y,w,h
+
+    sg_pass_action pass_action;
+    sg_pipeline pip_lines;
+    sg_pipeline pip_line_strips;
+    sg_pipeline pip_triangles;
+    sg_pipeline pip_triangle_strips;
+    sg_bindings bind;
+    labimm_vs_params_t vs_params;
+    labimm_fs_params_t fs_params;
+    
+    int currentVertexBufferOffset;
+    int vertexBufferLength;
+    sg_buffer vertexBuffer;
+    
+    LabImmFONSvertex* vertexData;
+} LabImmPlatformContext;
+
 
 void
 float4x4_ortho_projection(float* mat, float left, float top, float right, float bottom, float near, float far)
@@ -110,21 +137,21 @@ LabImmPlatformContext*
 LabImmPlatformContextCreate(
     int font_atlas_width, int font_atlas_height)
 {
-    LabImmPlatformContext *mtl = (LabImmPlatformContext*)calloc(1, sizeof(LabImmPlatformContext));
-    if (mtl == nullptr) {
+    LabImmPlatformContext *ctx = (LabImmPlatformContext*)calloc(1, sizeof(LabImmPlatformContext));
+    if (ctx == nullptr) {
         return nullptr;
     }
 
     // make a humorously small viewport default
-    mtl->viewport = { 0, 0, 640, 480 };
+    ctx->viewport = { 0, 0, 640, 480 };
 
     // small white block in slot 1
-    LabImmCreateAtlas(mtl, ATLAS_CLEAR_TEXTURE, 4, 4);
+    LabImmCreateAtlas(ctx, ATLAS_CLEAR_TEXTURE, 4, 4);
     static uint8_t clear[16] = {
         0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,
         0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,
     };
-    LabImmAtlasUpdate(mtl, ATLAS_CLEAR_TEXTURE, 0, 0, 4, 4, clear);
+    LabImmAtlasUpdate(ctx, ATLAS_CLEAR_TEXTURE, 0, 0, 4, 4, clear);
 
     // set up fonstash to render through this immediate mode
     FONSparams params;
@@ -132,7 +159,7 @@ LabImmPlatformContextCreate(
     params.width = font_atlas_width;
     params.height = font_atlas_height;
     params.flags = (unsigned char) FONS_ZERO_TOPLEFT;
-    params.userPtr = mtl;
+    params.userPtr = ctx;
 
     params.renderCreate = [](void* ptr, int width, int height) -> int {
         LabImmPlatformContext* mtl = (LabImmPlatformContext*) ptr;
@@ -170,16 +197,66 @@ LabImmPlatformContextCreate(
     // the atlas texture is managed by the LabImmPlatformContext itself
     params.renderDelete = [](void*) {};
 
-    mtl->fonsContext = fonsCreateInternal(&params);
-    mtl->next_texture_slot = 2;
-    return mtl;
+    ctx->fonsContext = fonsCreateInternal(&params);
+    ctx->next_texture_slot = 2;
+
+    ctx->shader = sg_make_shader(labimm_labimm_shader_desc(sg_query_backend()));
+
+    sg_pipeline_desc pip_desc;
+    memset(&pip_desc, 0, sizeof(pip_desc));
+    pip_desc.shader = ctx->shader;
+    pip_desc.colors[0].blend.enabled = true;
+    pip_desc.colors[0].blend.src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA;
+    pip_desc.colors[0].blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+
+    pip_desc.layout.buffers[ATTR_labimm_vs_position].stride =
+                                        sizeof(LabImmFONSvertex);
+    pip_desc.layout.attrs[ATTR_labimm_vs_position].format =
+                                        SG_VERTEXFORMAT_FLOAT2; // pos
+    pip_desc.layout.attrs[ATTR_labimm_vs_position].offset =
+                                        offsetof(LabImmFONSvertex, x);
+    pip_desc.layout.attrs[ATTR_labimm_vs_texcoord0].format =
+                                        SG_VERTEXFORMAT_FLOAT2; // tc
+    pip_desc.layout.attrs[ATTR_labimm_vs_texcoord0].offset =
+                                        offsetof(LabImmFONSvertex, tx);
+    pip_desc.layout.attrs[ATTR_labimm_vs_color0].format =
+                                        SG_VERTEXFORMAT_UBYTE4N;  // col
+    pip_desc.layout.attrs[ATTR_labimm_vs_color0].offset =
+                                        offsetof(LabImmFONSvertex, rgba);
+    
+    pip_desc.index_type = SG_INDEXTYPE_UINT32;
+    pip_desc.primitive_type = SG_PRIMITIVETYPE_LINES;
+    ctx->pip_lines = sg_make_pipeline(&pip_desc);
+    pip_desc.primitive_type = SG_PRIMITIVETYPE_LINE_STRIP;
+    ctx->pip_line_strips = sg_make_pipeline(&pip_desc);
+    pip_desc.primitive_type = SG_PRIMITIVETYPE_TRIANGLES;
+    ctx->pip_triangles = sg_make_pipeline(&pip_desc);
+    pip_desc.primitive_type = SG_PRIMITIVETYPE_TRIANGLE_STRIP;
+    ctx->pip_triangle_strips = sg_make_pipeline(&pip_desc);
+
+    /// @TODO the count should be an initialization parameter
+    ctx->vertexBufferLength = 65536 * sizeof(LabImmFONSvertex);
+    ctx->vertexData = (LabImmFONSvertex*) calloc(1, ctx->vertexBufferLength * 65536);
+    
+    sg_buffer_desc vbuf_desc;
+    memset(&vbuf_desc, 0, sizeof(vbuf_desc));
+    vbuf_desc.size = ctx->vertexBufferLength;
+    vbuf_desc.type = SG_BUFFERTYPE_VERTEXBUFFER;
+    vbuf_desc.usage = SG_USAGE_STREAM;
+    vbuf_desc.label = "labimm-vertex-buffer";
+    ctx->vertexBuffer = sg_make_buffer(&vbuf_desc);
+
+    if (ctx->vertexBuffer.id == SG_INVALID_ID) {
+        //printf("Couldn't create vertex buffer\n");
+    }
+    return ctx;
 }
 
-void LabImmPlatformContextDestroy(LabImmPlatformContext* mtl) {
+void LabImmPlatformContextDestroy(LabImmPlatformContext* ctx) {
     for (int i = 0; i < ATLAS_SLOT_MAX; ++i)
-        if (mtl->atlasTexture[i].id != SG_INVALID_ID)
-            sg_destroy_image(mtl->atlasTexture[i]);
-    free(mtl);
+        if (ctx->atlasTexture[i].id != SG_INVALID_ID)
+            sg_destroy_image(ctx->atlasTexture[i]);
+    free(ctx);
 }
 
 void lab_imm_viewport_set(LabImmPlatformContext* mtl,
@@ -190,10 +267,10 @@ void lab_imm_viewport_set(LabImmPlatformContext* mtl,
     mtl->viewport.w = h;
 }
 
-int LabImmCreateAtlas(LabImmPlatformContext* mtl, int slot, int width, int height)
+int LabImmCreateAtlas(LabImmPlatformContext* ctx, int slot, int width, int height)
 {
-    if (mtl->atlasTexture[slot].id != SG_INVALID_ID)
-        sg_destroy_image(mtl->atlasTexture[slot]);
+    if (ctx->atlasTexture[slot].id != SG_INVALID_ID)
+        sg_destroy_image(ctx->atlasTexture[slot]);
 
     sg_image_desc image_desc;
     memset(&image_desc, 0, sizeof(image_desc));
@@ -205,8 +282,8 @@ int LabImmCreateAtlas(LabImmPlatformContext* mtl, int slot, int width, int heigh
     image_desc.mag_filter = SG_FILTER_LINEAR;
     image_desc.wrap_u = SG_WRAP_CLAMP_TO_EDGE;
     image_desc.wrap_v = SG_WRAP_CLAMP_TO_EDGE;
-    mtl->atlasTexture[slot] = sg_make_image(&image_desc);
-    return mtl->atlasTexture[slot].id != SG_INVALID_ID ? 1 : 0;
+    ctx->atlasTexture[slot] = sg_make_image(&image_desc);
+    return ctx->atlasTexture[slot].id != SG_INVALID_ID ? 1 : 0;
 }
 
 void LabImmAtlasUpdate(LabImmPlatformContext* mtl,
@@ -219,121 +296,71 @@ void LabImmAtlasUpdate(LabImmPlatformContext* mtl,
     mtl->atlasTexture_needs_refresh[slot] = true;
 }
 
-// create the render pipeline, on the fly, if necessary
-static
-id<MTLRenderPipelineState> 
-LabImmDraw__renderPipelineState(LabImmPlatformContext* mtl)  {
-    if (mtl->renderPipelineState != nil) {
-        return mtl->renderPipelineState;
-    }
-
-    NSError *error = nil;
-    id<MTLLibrary> library = [mtl->device newLibraryWithSource:shaderSource options:nil error:&error];
-    if (library == nil) {
-        NSLog(@"Could not create Metal library from source: %@", error);
-        return nil;
-    }
-    id<MTLFunction> vertexFunction = [library newFunctionWithName:@"mtlfontstash_vertex"];
-    id<MTLFunction> fragmentFunction = [library newFunctionWithName:@"mtlfontstash_fragment"];
-
-    MTLVertexDescriptor *vertexDescriptor = [MTLVertexDescriptor vertexDescriptor];
-    vertexDescriptor.attributes[0].format = MTLVertexFormatFloat2;
-    vertexDescriptor.attributes[0].offset = 0;
-    vertexDescriptor.attributes[0].bufferIndex = 0;
-    vertexDescriptor.attributes[1].format = MTLVertexFormatFloat2;
-    vertexDescriptor.attributes[1].offset = 8;
-    vertexDescriptor.attributes[1].bufferIndex = 0;
-    vertexDescriptor.attributes[2].format = MTLVertexFormatUChar4Normalized;
-    vertexDescriptor.attributes[2].offset = 16;
-    vertexDescriptor.attributes[2].bufferIndex = 0;
-    vertexDescriptor.layouts[0].stride = 20;
-
-    MTLRenderPipelineDescriptor *descriptor = [MTLRenderPipelineDescriptor new];
-    descriptor.vertexDescriptor = vertexDescriptor;
-
-    descriptor.colorAttachments[0].pixelFormat = mtl->pixelFormat;
-    descriptor.colorAttachments[0].blendingEnabled = YES;
-    descriptor.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorOne;
-    descriptor.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-    descriptor.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
-    descriptor.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
-    descriptor.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-    descriptor.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
-
-    descriptor.vertexFunction = vertexFunction;
-    descriptor.fragmentFunction = fragmentFunction;
-
-    error = nil;
-    id<MTLRenderPipelineState> pipelineState = [mtl->device newRenderPipelineStateWithDescriptor:descriptor error:&error];
-    if (pipelineState == nil) {
-        NSLog(@"Error when compiling mtlfontstash render pipeline state: %@", error);
-    }
-
-    mtl->renderPipelineState = pipelineState;
-
-    return pipelineState;
-}
-
-void LabImmDrawArrays(LabImmPlatformContext* mtl,
+void LabImmDrawArrays(LabImmPlatformContext* ctx,
         int texture_slot, bool sample_nearest,
         LabPrim prim,
         const float* verts, const float* tcoords, const unsigned int* colors, 
         int nverts)
 {
-    if (mtl->atlasTexture[texture_slot] == 0 || !mtl->currentRenderCommandEncoder) {
+    if (ctx->atlasTexture[texture_slot].id == SG_INVALID_ID ||
+        ctx->vertexBufferLength == 0) {
         return;
     }
-
-    id<MTLRenderCommandEncoder> renderCommandEncoder = mtl->currentRenderCommandEncoder;
-
-    id<MTLRenderPipelineState> pipelineState = LabImmDraw__renderPipelineState(mtl);
-    [renderCommandEncoder setRenderPipelineState:pipelineState];
-
-    int bufferLength = sizeof(MTLFONSvertex) * nverts;
-    if (mtl->currentVertexBufferOffset + bufferLength > MTLFONS_BUFFER_LENGTH) {
+    
+    sg_push_debug_group("LabImmDrawArrays");
+    
+    switch (prim) {
+        case labprim_lines:
+            sg_apply_pipeline(ctx->pip_lines); break;
+        case labprim_linestrip:
+            sg_apply_pipeline(ctx->pip_line_strips); break;
+        case labprim_triangles:
+            sg_apply_pipeline(ctx->pip_triangles); break;
+        case labprim_tristrip:             sg_apply_pipeline(ctx->pip_triangle_strips); break;
+    }
+    
+    // set up vertex bindings
+    int bufferLength = sizeof(LabImmFONSvertex) * nverts;
+    if (ctx->currentVertexBufferOffset + bufferLength > ctx->vertexBufferLength) {
         // Wrap the vertex buffer to the beginning, treating it as a circular buffer.
-        mtl->currentVertexBufferOffset = 0;
+        ctx->currentVertexBufferOffset = 0;
     }
 
-    MTLFONSvertex *vertexData = 
-        (MTLFONSvertex*) ((uint8_t*) mtl->vertexBuffer.contents +
-                                     mtl->currentVertexBufferOffset);
+    LabImmFONSvertex* vertexData = ctx->vertexData + ctx->currentVertexBufferOffset;
     
     for (int i = 0; i < nverts; ++i) {
         memcpy(&vertexData[i].x, &verts[i * 2], sizeof(float) * 2);
         memcpy(&vertexData[i].tx, &tcoords[i * 2], sizeof(float) * 2);
         memcpy(&vertexData[i].rgba, &colors[i], sizeof(unsigned int));
     }
-
-    [renderCommandEncoder setVertexBuffer:mtl->vertexBuffer 
-                                   offset:mtl->currentVertexBufferOffset 
-                                  atIndex:0];
-
-    MTLViewport viewport = mtl->viewport;
-    simd_float4x4 projectionMatrix = 
-        float4x4_ortho_projection(viewport.originX, viewport.originY,
-                                  viewport.width, viewport.height,
-                                  0, 1);
     
-    MTLPrimitiveType mtl_prim;
-    switch(prim) {
-        case labprim_lines: mtl_prim = MTLPrimitiveTypeLine; break;
-        case labprim_linestrip: mtl_prim = MTLPrimitiveTypeLineStrip; break;
-        case labprim_triangles: mtl_prim = MTLPrimitiveTypeTriangle; break;
-        case labprim_tristrip: mtl_prim = MTLPrimitiveTypeTriangleStrip; break;
-    }
-    [renderCommandEncoder setVertexBytes:&projectionMatrix
-                                  length:sizeof(simd_float4x4) atIndex:1];
-    [renderCommandEncoder setFragmentBytes:&texture_slot
-                                  length:sizeof(int) atIndex:1];
+    sg_range vert_range;
+    vert_range.ptr = vertexData;
+    vert_range.size = sizeof(LabImmFONSvertex) * nverts;
+    sg_update_buffer(ctx->vertexBuffer, &vert_range);
+
+    sg_apply_bindings(ctx->bind);
     
-    float closest_linear = sample_nearest ? 0.f : 1.f;
-    [renderCommandEncoder setFragmentBytes:&closest_linear
-                                  length:sizeof(float) atIndex:2];
-    [renderCommandEncoder setFragmentTextures:mtl->atlasTexture withRange:NSMakeRange(0,ATLAS_SLOT_MAX)];
-    [renderCommandEncoder drawPrimitives:mtl_prim
-                             vertexStart:0 vertexCount:nverts];
-    mtl->currentVertexBufferOffset += bufferLength; // todo: align up
+    // set up the uniforms
+    float proj[16];
+    float4x4_ortho_projection((float*)&ctx->vs_params.projectionMatrix,
+            ctx->viewport.x, ctx->viewport.y, // left top
+            ctx->viewport.x + ctx->viewport.z, // right
+            ctx->viewport.y + ctx->viewport.w, // bottom
+            0, 1);  // near far
+
+    sg_apply_uniforms(SG_SHADERSTAGE_VS,
+                      SLOT_labimm_vs_params,
+                      SG_RANGE(ctx->vs_params));
+
+    ctx->fs_params.texture_slot = texture_slot;
+    sg_apply_uniforms(SG_SHADERSTAGE_FS,
+                      SLOT_labimm_fs_params,
+                      SG_RANGE(ctx->fs_params));
+    sg_draw(0, nverts, 1);
+    
+    ctx->currentVertexBufferOffset += bufferLength; // todo: align up
+    sg_pop_debug_group();
 }
 
 void lab_imm_batch_draw(
@@ -341,7 +368,7 @@ void lab_imm_batch_draw(
     int texture_slot, bool sample_nearest)
 {
     if (!batch || !batch->platform || batch->interleaved ||
-        batch->platform->atlasTexture[texture_slot] == 0 || !batch->platform->currentRenderCommandEncoder)
+        batch->platform->atlasTexture[texture_slot].id == SG_INVALID_ID)
     {
         return;
     }

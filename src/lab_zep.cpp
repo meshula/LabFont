@@ -79,7 +79,7 @@ namespace
                                //std::shared_ptr<ZepFont> h1,
                                //std::shared_ptr<ZepFont> h2,
                                //std::shared_ptr<ZepFont> h3)
-            : ZepDisplay(pixelScale)
+        : ZepDisplay()
         , _platform(pc)
         {
             //        m_fonts[(int)ZepTextType::UI] = ui;
@@ -87,6 +87,7 @@ namespace
             //        m_fonts[(int)ZepTextType::Heading1] = h1;
             //        m_fonts[(int)ZepTextType::Heading2] = h2;
             //        m_fonts[(int)ZepTextType::Heading3] = h3;
+            SetPixelScale(pixelScale);
         }
 
         void ApplyClip() const

@@ -30,6 +30,7 @@ if (LABFONT_SOKOL)
 
     set(LABFONT_PLATFORM_SRC
         LabDrawImmediate-sokol.h
+        src/labimm-shd.h
         src/main-sokol.cpp
         src/LabFont-sokol.cpp
         src/lab_microui-sokol.cpp)

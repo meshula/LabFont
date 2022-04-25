@@ -8,6 +8,8 @@
 #define LAB_EXTERNC
 #endif
 
+#define fu_xc
+
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -91,13 +93,18 @@ LAB_EXTERNC void lab_imm_line(LabImmContext* lc,
 //-----------------------------------------------------------------------------
 // utility
 // [32 ABGR 0]
-uint32_t lab_imm_pack_RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+
+inline uint32_t lab_imm_pack_RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    return (r) | (g << 8) | (b << 16) | (a << 24);
+}
 
 #ifdef __clang__
 _Pragma("clang assume_nonnull end")
 #endif
 
 #endif
+
+//-----------------------------------------------------------------------------
 
 #ifdef LABIMMDRAW_IMPL
 
@@ -106,11 +113,6 @@ _Pragma("clang assume_nonnull end")
 #ifdef __clang__
 _Pragma("clang assume_nonnull begin")
 #endif
-
-uint32_t lab_imm_pack_RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
-{
-    return (r) | (g << 8) | (b << 16) | (a << 24);
-}
 
 // there's a really nice joined line with mitered or round ends here, under bsd-2.
 // https://github.com/mapbox/mapbox-gl-native/blob/b8edc2399b9640498ccbbbb5b8f058c63d070933/src/mbgl/renderer/buckets/line_bucket.cpp

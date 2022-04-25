@@ -10,6 +10,7 @@
 
 #define LABIMMDRAW_IMPL
 #include "../LabDrawImmediate.h"
+#undef LABIMMDRAW_IMPL
 #define LABIMMDRAW_SOKOL_IMPLEMENTATION
 #include "../LabDrawImmediate-sokol.h"
 
@@ -145,6 +146,7 @@ static void init()
         exit(0);
     }
     static std::string asset_root(dir);
+    font_demo_init(asset_root.c_str());
 
     static std::string r18_path = asset_root + "/hauer-12.png";// "/robot-18.png";
     static LabFont* font_robot18 = LabFontLoad("robot-18", r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });
