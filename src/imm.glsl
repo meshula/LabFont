@@ -27,12 +27,28 @@ uniform fs_params {
     int texture_slot;
 };
 
-uniform sampler2D tex0[4];
+uniform sampler2D tex0;
+uniform sampler2D tex1;
+uniform sampler2D tex2;
+uniform sampler2D tex3;
 in vec4 uv;
 in vec4 color;
 out vec4 fragColor;
 void main() {
-    fragColor = texture(tex[texture_slot], uv.xy) * color;
+    switch(texture_slot) {
+        case 0:
+            fragColor = texture(tex0, uv.xy) * color;
+            break;
+        case 1:
+            fragColor = texture(tex1, uv.xy) * color;
+            break;
+        case 2:
+            fragColor = texture(tex2, uv.xy) * color;
+            break;
+        case 3:
+            fragColor = texture(tex3, uv.xy) * color;
+            break;
+    }
 }
 @end
 

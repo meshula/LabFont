@@ -138,6 +138,9 @@ static void init()
     immediate_pipeline = sgl_make_pipeline(&pipeline_desc);
 
     add_quit_menu();
+    
+    state.imm_ctx = LabImmPlatformContextCreate(1024, 1024);
+    LabFontInit(state.imm_ctx);
 
     const char* dir = lab_application_resource_path(g_app_path.c_str(), 
                 "share/lab_font_demo");
@@ -283,7 +286,6 @@ void frame(void) {
     size_t buff_size = lab_imm_size_bytes(256);
     float* buff = (float*) malloc(buff_size);
     LabImmContext lic;
-    
     lab_imm_batch_begin(&lic, state.imm_ctx, 257, labprim_linestrip, true, buff);
 
     for (int i = 0; i < 256; ++i) {
@@ -332,11 +334,22 @@ void frame(void) {
         sgl_end();
     }
 
+    // begin sokol GL rendering with a clear pass
+    sg_pass_action pass_action;
+    memset(&pass_action, 0, sizeof(pass_action));
+    pass_action.colors[0].action = SG_ACTION_CLEAR;
+    pass_action.colors[0].value = { state.bg.r / 255.0f, state.bg.g / 255.0f, state.bg.b / 255.0f, 1.0f };
+    sg_begin_default_pass(&pass_action, sapp_width(), sapp_height());
+
+    // draw all the sgl stuff
+    sgl_draw();
+
+    
     LabFontDrawState* ds = LabFontDrawBegin(0, 0, sapp_width(), sapp_height());
     fontDemo(ds, dx, dy, sx, sy);
 
     //---- sgl UI layer
-    if (true) {
+    if (false) {
         /* UI definition */
         mu_begin(state.mu_ctx);
         microui_test_window(state.mu_ctx);
@@ -350,16 +363,7 @@ void frame(void) {
 
     LabFontDrawEnd(ds);
 
-    // begin sokol GL rendering with a clear pass
-    sg_pass_action pass_action;
-    memset(&pass_action, 0, sizeof(pass_action));
-    pass_action.colors[0].action = SG_ACTION_CLEAR;
-    pass_action.colors[0].value = { state.bg.r / 255.0f, state.bg.g / 255.0f, state.bg.b / 255.0f, 1.0f };
-    sg_begin_default_pass(&pass_action, sapp_width(), sapp_height());
-
-    // draw all the sgl stuff
-    sgl_draw();
-
+    
     sg_end_pass();
 
     //-------------------------------------------------------------------------

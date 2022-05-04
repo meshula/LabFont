@@ -3,14 +3,12 @@
 
 #include "../LabFont.h"
 #include "../LabSokol.h"
+#include "../LabDrawImmediate-sokol.h"
 
 #include <stddef.h>
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash.h"
 #define SOKOL_IMPL
-#ifndef SOKOL_METAL
-xxx
-#endif
 #include "sokol_fontstash.h"
 #undef SOKOL_IMPL
 
@@ -23,6 +21,7 @@ xxx
 #include <map>
 #include <string>
 #include <stdio.h>
+#include <vector>
 
 namespace lf_internal {
     void sokol8x8_unpack_font(const uint8_t* in_font, 
@@ -34,6 +33,12 @@ namespace lf_internal {
     extern const uint8_t sokol_font_cpc[2048];
     extern const uint8_t sokol_font_c64[2048];
     extern const uint8_t sokol_font_oric[2048];
+
+    LabImmPlatformContext* _ctx = nullptr;
+}
+
+void LabFontInit(LabImmPlatformContext* ctx) {
+    lf_internal::_ctx = ctx;
 }
 
 struct LabFont
@@ -41,6 +46,7 @@ struct LabFont
     int id;           // >= zero for a TTF
 
     sg_image img;     // non-zero for a QuadPlay texture
+    int texture_slot;
     int img_w, img_h; // non-zero for a QuadPlay texture
     int baseline;
     int charsz_x, charsz_y;
@@ -137,18 +143,15 @@ namespace LabFontInternal {
 }
 
 extern "C"
-LabFontDrawState* LabFontDrawBegin(float ox, float oy, float w, float h) {
-    sgl_defaults();
-    sgl_matrix_mode_projection();
-    sgl_ortho(0.0f, w, h, 0.0f, -1.0f, +1.0f);
-    sgl_scissor_rect(0, 0, w, h, true);
-    sgl_enable_texture();
+LabFontDrawState* LabFontDrawBegin(
+        float ox, float oy, float w, float h) {
     return nullptr;
 }
 
 
 extern "C"
-LabFontState* LabFontStateBake(LabFont* font,
+LabFontState* LabFontStateBake(
+    LabFont* font,
     float size,
     LabFontColor color,
     LabFontAlign alignment,
@@ -174,7 +177,8 @@ LabFontState* LabFontStateBake(LabFont* font,
 }
 
 extern "C"
-struct LabFontState* LabFontStateBake_bind(struct LabFont* font,
+struct LabFontState* LabFontStateBake_bind(
+    struct LabFont* font,
     float size,
     struct LabFontColor* color,
     struct LabFontAlign* alignment,
@@ -197,7 +201,8 @@ std::array<int, 256> build_quadplay_font_map();
 static std::map<std::string, std::unique_ptr<LabFont>> fonts;
 
 extern "C"
-LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
+LabFont* LabFontLoad(const char* name, const char* path,
+                     LabFontType type)
 {
     std::string key(name);
     if (type.type == LabFontTypeTTF)
@@ -310,7 +315,8 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
             img_desc.data.subimage[0][0].ptr = data;
             img_desc.data.subimage[0][0].size = (size_t)(x * 4 * y);
             r->img = sg_make_image(&img_desc);
-
+            r->texture_slot = LabImmAddTexture(lf_internal::_ctx, r->img);
+            
             debug_texture = r->img;
 
             if (r->img.id == 0)
@@ -456,41 +462,33 @@ LabFont* LabFontGet(const char* name)
 }
 
 static bool qp_must_init = true;
-static sgl_pipeline qp_pip;
 
-static void quadplay_font_init()
-{
-    sg_pipeline_desc desc;
-    memset(&desc, 0, sizeof(desc));
-    desc.colors[0].blend.enabled = true;
-    desc.colors[0].blend.src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA;
-    desc.colors[0].blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
-    qp_pip = sgl_make_pipeline(&desc);
-}
-
-
-
-static float sokol_8x8_draw(const char* str, const char* end, 
+static float sokol_8x8_draw(const char* str, const char* end,
         LabFontColor* c, float x, float y, LabFontState* fs)
 {
-    if (str == nullptr || fs == nullptr || fs->font->img.id <= 0)
+    if (str == nullptr || fs == nullptr || fs->font->img.id == SG_INVALID_ID)
         return x;
+
     if (end == nullptr)
         end = str + strlen(str);
-    if (qp_must_init) {
-        quadplay_font_init();
-        qp_must_init = false;
-    }
 
-    sgl_push_pipeline();
-    sgl_load_pipeline(qp_pip);
-    sgl_enable_texture();
-    sgl_texture(fs->font->img);
-    sgl_begin_quads();
-    sgl_c4b(c->rgba[0], c->rgba[1], c->rgba[2], c->rgba[3]);
+    FONScontext* fc = LabFontInternal::fontStash();
+    uint32_t* rgba_p = (uint32_t*) & c->rgba;
+    uint32_t rgba = *rgba_p;
+    int count = end - str;
+  
+    static std::vector<float> verts;
+    static std::vector<float> tcoords;
+    static std::vector<uint32_t> colors;
+    verts.clear();
+    verts.reserve(count * 6 * 2);
+    tcoords.clear();
+    tcoords.reserve(count * 6 * 2);
+    colors.clear();
+    colors.reserve(count * 6);
 
-    int px = 8;
-    int py = 8;
+    int px = fs->size;
+    int py = fs->size;
 
     if (fs->alignment.alignment & LabFontAlignBottom)
         y -= py;
@@ -508,59 +506,85 @@ static float sokol_8x8_draw(const char* str, const char* end,
         x -= sz.width;
     }
 
-    float fpx = px / float(fs->font->img_w);
-    float fpy = float(fs->font->img_h) / 48.f;
+    const float pixel_h_pitch = 1.f / float(fs->font->img_w);
+    const float pixel_8h_pitch = 8.f / float(fs->font->img_w);
+    const float font_y_start = float(fs->font->img_h) / 64.f;// + 1.f/128.f;
+    const float font_y_pitch = 8.f / 64.f - 1.f/128.f;
     float idx = 0;
     int kern = 0;
-
-    float render_w = px * 4;
-    float render_h = py * 4;
-
+    float render_w = px;// * 4;
+    float render_h = py;// * 4;
     for (const char* p = str; p != end; p++, idx += 1.f) {
         int i = (int) *p;
         int ix = i;
 
-        float u0 = float(ix) * fpx;
-        float v0 = fpy;
-        float u1 = u0 + fpx;
-        float v1 = v0 + float(py) / 48.f;
+        float u0 = pixel_h_pitch * (ix * 8);
+        float u1 = u0 + pixel_8h_pitch;
+        float v0 = font_y_start;
+        float v1 = v0 + font_y_pitch;
 
         float x0 = (x + kern) + (idx * render_w);
         float y0 = y;
         float x1 = x0 + render_w;
         float y1 = y0 + render_h;
-        sgl_v2f_t2f(x0, y0, u0, v0);
-        sgl_v2f_t2f(x1, y0, u1, v0);
-        sgl_v2f_t2f(x1, y1, u1, v1);
-        sgl_v2f_t2f(x0, y1, u0, v1);
+
+        verts.push_back(x0); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y1);
+        verts.push_back(x0); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y1);
+        verts.push_back(x0); verts.push_back(y1);
+        
+        tcoords.push_back(u0); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v1);
+        tcoords.push_back(u0); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v1);
+        tcoords.push_back(u0); tcoords.push_back(v1);
+
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
 
         kern += fs->font->charspc_x;
     }
 
-    sgl_end();
-    sgl_pop_pipeline();
-    sgl_disable_texture();
+     LabImmDrawArrays(lf_internal::_ctx, fs->font->texture_slot, true,
+                     labprim_triangles,
+                     verts.data(), tcoords.data(), colors.data(),
+                     count * 6);
+
     return x + kern + (idx * px);
 }
 
-static float quadplay_font_draw(const char* str, const char* end, 
+static float quadplay_font_draw(const char* str, const char* end,
         LabFontColor* c, float x, float y, LabFontState* fs)
 {
-    if (str == nullptr || fs == nullptr || fs->font->img.id <= 0)
+    if (str == nullptr || fs == nullptr || fs->font->img.id == SG_INVALID_ID)
         return x;
+
     if (end == nullptr)
         end = str + strlen(str);
-    if (qp_must_init) {
-        quadplay_font_init();
-        qp_must_init = false;
-    }
 
-    sgl_push_pipeline();
-    sgl_load_pipeline(qp_pip);
-    sgl_enable_texture();
-    sgl_texture(fs->font->img);
-    sgl_begin_quads();
-    sgl_c4b(c->rgba[0], c->rgba[1], c->rgba[2], c->rgba[3]);
+    FONScontext* fc = LabFontInternal::fontStash();
+    uint32_t* rgba_p = (uint32_t*) & c->rgba;
+    uint32_t rgba = *rgba_p;
+    int count = end - str;
+    if (!count)
+        return;
+    
+    static std::vector<float> verts;
+    static std::vector<float> tcoords;
+    static std::vector<uint32_t> colors;
+    verts.clear();
+    verts.reserve(count * 6 * 2);
+    tcoords.clear();
+    tcoords.reserve(count * 6 * 2);
+    colors.clear();
+    colors.reserve(count * 6);
 
     int px = fs->font->img_w / 32;
     int py = fs->font->img_h / 14;
@@ -598,17 +622,36 @@ static float quadplay_font_draw(const char* str, const char* end,
         float y0 = y;
         float x1 = x0 + px;
         float y1 = y0 + py;
-        sgl_v2f_t2f(x0, y0, u0, v0);
-        sgl_v2f_t2f(x1, y0, u1, v0);
-        sgl_v2f_t2f(x1, y1, u1, v1);
-        sgl_v2f_t2f(x0, y1, u0, v1);
+        
+        verts.push_back(x0); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y1);
+        verts.push_back(x0); verts.push_back(y0);
+        verts.push_back(x1); verts.push_back(y1);
+        verts.push_back(x0); verts.push_back(y1);
+
+        tcoords.push_back(u0); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v1);
+        tcoords.push_back(u0); tcoords.push_back(v0);
+        tcoords.push_back(u1); tcoords.push_back(v1);
+        tcoords.push_back(u0); tcoords.push_back(v1);
+
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
+        colors.push_back(rgba);
 
         kern += fs->font->kern[*p] + fs->font->charspc_x;
     }
-
-    sgl_end();
-    sgl_pop_pipeline();
-    sgl_disable_texture();
+    
+    LabImmDrawArrays(lf_internal::_ctx, fs->font->texture_slot, true,
+                     labprim_triangles,
+                     verts.data(), tcoords.data(), colors.data(),
+                     count * 6);
+    
     return x + kern + (idx * px);
 }
 

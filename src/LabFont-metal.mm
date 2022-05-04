@@ -142,9 +142,12 @@ namespace LabFontInternal {
 }
 
 extern "C"
-void LabFontInitMetal(LabImmDrawContext* imm_ctx, MTLPixelFormat fmt) {
-    LabFontInternal::_imm_ctx = imm_ctx;
+void LabFontInitMetal(MTLPixelFormat fmt) {
     LabFontInternal::_format = fmt;
+}
+extern "C"
+void LabFontInit(LabImmDrawContext* imm_ctx) {
+    LabFontInternal::_imm_ctx = imm_ctx;
 }
 
 extern "C"

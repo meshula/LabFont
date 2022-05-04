@@ -27,14 +27,14 @@ extern "C" {
 
 #if defined(__APPLE__) && defined(__OBJC__)
 
-struct LabImmPlatformContext;
-typedef struct LabImmPlatformContext LabImmDrawContext;
-
-void LabFontInitMetal(LabImmDrawContext*, MTLPixelFormat);
+void LabFontInitMetal(MTLPixelFormat);
 void LabFontDrawBeginMetal(id<MTLRenderCommandEncoder>);
 
 #endif
 
+typedef struct LabImmPlatformContext LabImmPlatformContext;
+
+void LabFontInit(LabImmPlatformContext*);
 
 const int LabFontTypeTTF = 0;
 const int LabFontTypeQuadplay = 1;

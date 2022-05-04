@@ -42,6 +42,8 @@ struct LabImmPlatformContext;
 typedef struct LabImmPlatformContext LabImmPlatformContext;
 
 typedef struct LabImmContext {
+    LabImmPlatformContext* platform;
+
     float* data_pos;
     float* data_st;
     uint32_t* data_rgba;
@@ -54,8 +56,6 @@ typedef struct LabImmContext {
     bool interleaved;
     float s, t;
     uint32_t rgba;
-    
-    LabImmPlatformContext* platform;
 } LabImmContext;
 
 LAB_EXTERNC size_t lab_imm_size_bytes(int vert_count);

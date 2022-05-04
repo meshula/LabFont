@@ -131,7 +131,8 @@ static void zep_window(mu_Context* ctx)
 
         // font atlas size 1024x1024
         self->imm_ctx = LabImmPlatformContextCreate(self.device, 1024, 1024);
-        LabFontInitMetal(self->imm_ctx, self.colorPixelFormat);
+        LabFontInitMetal(self.colorPixelFormat);
+        LabFontInit(self->imm_ctx);
 
         const char* rsrc_str = lab_application_resource_path(g_app_path.c_str(),
                                                              "share/lab_font_demo");

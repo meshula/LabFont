@@ -10,17 +10,11 @@
 #include "LabDrawImmediate.h"
 #include "sokol_gfx.h"
 
-inline
-unsigned int packRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
-{
-    return (r) | (g << 8) | (b << 16) | (a << 24);
-}
-
 #define ATLAS_CLEAR_TEXTURE 0
 #define ATLAS_FONSTASH_TEXTURE 1
+#define ATLAS_FIRST_AVAILABLE_TEXTURE 2
 #define ATLAS_SLOT_MAX 16
 
-struct FONSContext;
 typedef struct FONScontext FONScontext;
 typedef struct LabImmPlatformContext LabImmPlatformContext;
 
@@ -56,16 +50,18 @@ void LabImmDrawArrays(
 // If an atlas has been previously created, calling this will replace it
 int
 LabImmCreateAtlas(
-    LabImmPlatformContext* _Nonnull,
+    LabImmPlatformContext*,
     int texture_slot, int width, int height);
 
 // given an in memory copy of the atlas, stored at data, Update will mark the
 // region from srcx, srcy to srcx+w, srcy+h as needing a GPU refresh
 void
 LabImmAtlasUpdate(
-    LabImmPlatformContext* _Nonnull,
-    int texture_slot, int srcx, int srcy, int w, int h, const uint8_t* _Nonnull data);
+    LabImmPlatformContext*,
+    int texture_slot, int srcx, int srcy, int w, int h, const uint8_t* data);
 
+int
+LabImmAddTexture(LabImmPlatformContext* ctx, sg_image img);
 
 #endif
 
@@ -81,39 +77,60 @@ LabImmAtlasUpdate(
 #include "fontstash.h"
 #include "src/labimm-shd.h"
 
-
 typedef struct {
     float x, y;
     float tx, ty;
     uint32_t rgba;
 } LabImmFONSvertex;
 
-typedef struct LabImmPlatformContext {
-    FONScontext* fonsContext;
+typedef struct {
+    LabPrim prim;
+    int startVertex, vertexCount;
+    int texture_slot;
+} LabImmDrawCmd;
 
-    sg_image atlasTexture[ATLAS_SLOT_MAX];
-    sg_shader shader;
+typedef struct LabImmPlatformContext {
+    // textures stash
+    FONScontext* fonsContext;
     bool atlasTexture_needs_refresh[ATLAS_SLOT_MAX];
     int next_texture_slot;
 
-    labimm_v4f viewport; // x,y,w,h
+    // vertex stash
+    int vertexCapacity;
+    int currentVertexBufferOffset;
+    int vertexBufferLength;
+    LabImmFONSvertex* vertexData;
 
+    // drawing stash
+    int nextDrawCmd;
+    LabImmDrawCmd cmds[16 * 1024];
+
+    // settings
+    labimm_v4f viewport; // x,y,w,h
+    labimm_vs_params_t vs_params;
+    labimm_fs_params_t fs_params;
+
+    // sokol things
+    sg_image atlasTexture[ATLAS_SLOT_MAX];
+    sg_shader shader;
     sg_pass_action pass_action;
     sg_pipeline pip_lines;
     sg_pipeline pip_line_strips;
     sg_pipeline pip_triangles;
     sg_pipeline pip_triangle_strips;
     sg_bindings bind;
-    labimm_vs_params_t vs_params;
-    labimm_fs_params_t fs_params;
-    
-    int currentVertexBufferOffset;
-    int vertexBufferLength;
     sg_buffer vertexBuffer;
-    
-    LabImmFONSvertex* vertexData;
 } LabImmPlatformContext;
 
+int
+LabImmAddTexture(LabImmPlatformContext* ctx, sg_image img) {
+    if (!ctx)
+        return -1;
+    
+    ctx->atlasTexture[ctx->next_texture_slot] = img;
+    ++ctx->next_texture_slot;
+    return ctx->next_texture_slot - 1;
+}
 
 void
 float4x4_ortho_projection(float* mat, float left, float top, float right, float bottom, float near, float far)
@@ -145,15 +162,15 @@ LabImmPlatformContextCreate(
     // make a humorously small viewport default
     ctx->viewport = { 0, 0, 640, 480 };
 
-    // small white block in slot 1
+    // small white block in the first slot
     LabImmCreateAtlas(ctx, ATLAS_CLEAR_TEXTURE, 4, 4);
     static uint8_t clear[16] = {
         0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,
         0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,
     };
     LabImmAtlasUpdate(ctx, ATLAS_CLEAR_TEXTURE, 0, 0, 4, 4, clear);
-
-    // set up fonstash to render through this immediate mode
+    
+    // set up fonstash to render through LabImmDrawArrays
     FONSparams params;
     memset(&params, 0, sizeof(params));
     params.width = font_atlas_width;
@@ -184,21 +201,23 @@ LabImmPlatformContextCreate(
     };
 
     params.renderDraw = [](void* ptr, 
-        const float* verts, const float* tcoords, const unsigned int* colors, 
-        int nverts) {
+                           const float* verts, const float* tcoords, const unsigned int* colors,
+                           int nverts) {
         LabImmPlatformContext* mtl = (LabImmPlatformContext*) ptr;
-        // fonstash texture atlas in slot 2
         LabImmDrawArrays(mtl, ATLAS_FONSTASH_TEXTURE, false,
                          labprim_triangles,
                          verts, tcoords, colors, nverts);
     };
 
-    // the atlas could be deleted on demand by fonstash, but there's no need,
-    // the atlas texture is managed by the LabImmPlatformContext itself
-    params.renderDelete = [](void*) {};
+    params.renderDelete = [](void* ptr) {
+        LabImmPlatformContext* ctx = (LabImmPlatformContext*) ptr;
+        if (ctx->atlasTexture[ATLAS_FONSTASH_TEXTURE].id != SG_INVALID_ID)
+            sg_destroy_image(ctx->atlasTexture[ATLAS_FONSTASH_TEXTURE]);
+        ctx->atlasTexture[ATLAS_FONSTASH_TEXTURE].id = SG_INVALID_ID;
+    };
 
     ctx->fonsContext = fonsCreateInternal(&params);
-    ctx->next_texture_slot = 2;
+    ctx->next_texture_slot = ATLAS_FIRST_AVAILABLE_TEXTURE;
 
     ctx->shader = sg_make_shader(labimm_labimm_shader_desc(sg_query_backend()));
 
@@ -224,7 +243,7 @@ LabImmPlatformContextCreate(
     pip_desc.layout.attrs[ATTR_labimm_vs_color0].offset =
                                         offsetof(LabImmFONSvertex, rgba);
     
-    pip_desc.index_type = SG_INDEXTYPE_UINT32;
+    pip_desc.index_type = SG_INDEXTYPE_NONE;            // non indexed rendering
     pip_desc.primitive_type = SG_PRIMITIVETYPE_LINES;
     ctx->pip_lines = sg_make_pipeline(&pip_desc);
     pip_desc.primitive_type = SG_PRIMITIVETYPE_LINE_STRIP;
@@ -234,8 +253,8 @@ LabImmPlatformContextCreate(
     pip_desc.primitive_type = SG_PRIMITIVETYPE_TRIANGLE_STRIP;
     ctx->pip_triangle_strips = sg_make_pipeline(&pip_desc);
 
-    /// @TODO the count should be an initialization parameter
-    ctx->vertexBufferLength = 65536 * sizeof(LabImmFONSvertex);
+    ctx->vertexCapacity = 4 * 1024 * 1024;
+    ctx->vertexBufferLength = ctx->vertexCapacity * sizeof(LabImmFONSvertex);
     ctx->vertexData = (LabImmFONSvertex*) calloc(1, ctx->vertexBufferLength * 65536);
     
     sg_buffer_desc vbuf_desc;
@@ -256,15 +275,21 @@ void LabImmPlatformContextDestroy(LabImmPlatformContext* ctx) {
     for (int i = 0; i < ATLAS_SLOT_MAX; ++i)
         if (ctx->atlasTexture[i].id != SG_INVALID_ID)
             sg_destroy_image(ctx->atlasTexture[i]);
+    sg_destroy_buffer(ctx->vertexBuffer);
+    sg_destroy_shader(ctx->shader);
+    sg_destroy_pipeline(ctx->pip_triangles);
+    sg_destroy_pipeline(ctx->pip_triangle_strips);
+    sg_destroy_pipeline(ctx->pip_lines);
+    sg_destroy_pipeline(ctx->pip_line_strips);
     free(ctx);
 }
 
-void lab_imm_viewport_set(LabImmPlatformContext* mtl,
+void lab_imm_viewport_set(LabImmPlatformContext* ctx,
         float originX, float originY, float w, float h) {
-    mtl->viewport.x = originX;
-    mtl->viewport.y = originY;
-    mtl->viewport.z = w;
-    mtl->viewport.w = h;
+    ctx->viewport.x = originX;
+    ctx->viewport.y = originY;
+    ctx->viewport.z = w;
+    ctx->viewport.w = h;
 }
 
 int LabImmCreateAtlas(LabImmPlatformContext* ctx, int slot, int width, int height)
@@ -286,14 +311,14 @@ int LabImmCreateAtlas(LabImmPlatformContext* ctx, int slot, int width, int heigh
     return ctx->atlasTexture[slot].id != SG_INVALID_ID ? 1 : 0;
 }
 
-void LabImmAtlasUpdate(LabImmPlatformContext* mtl,
+void LabImmAtlasUpdate(LabImmPlatformContext* %@,
     int slot, int srcx, int srcy, int w, int h, const uint8_t* data)
 {
-    if (mtl->atlasTexture[slot].id == SG_INVALID_ID) {
+    if (ctx->atlasTexture[slot].id == SG_INVALID_ID) {
         return;
     }
 
-    mtl->atlasTexture_needs_refresh[slot] = true;
+    ctx->atlasTexture_needs_refresh[slot] = true;
 }
 
 void LabImmDrawArrays(LabImmPlatformContext* ctx,
@@ -329,16 +354,27 @@ void LabImmDrawArrays(LabImmPlatformContext* ctx,
     LabImmFONSvertex* vertexData = ctx->vertexData + ctx->currentVertexBufferOffset;
     
     for (int i = 0; i < nverts; ++i) {
-        memcpy(&vertexData[i].x, &verts[i * 2], sizeof(float) * 2);
-        memcpy(&vertexData[i].tx, &tcoords[i * 2], sizeof(float) * 2);
-        memcpy(&vertexData[i].rgba, &colors[i], sizeof(unsigned int));
+        vertexData[i].x = verts[i*2];
+        vertexData[i].y = verts[i*2 + 1];
+        vertexData[i].tx = tcoords[i*2];
+        vertexData[i].ty = tcoords[i*2 + 1];
+        vertexData[i].rgba = colors[i];
     }
     
     sg_range vert_range;
     vert_range.ptr = vertexData;
     vert_range.size = sizeof(LabImmFONSvertex) * nverts;
     sg_update_buffer(ctx->vertexBuffer, &vert_range);
+    ctx->bind.vertex_buffers[0] = ctx->vertexBuffer;
 
+    ctx->bind.fs_images[0] = ctx->atlasTexture[0];
+    ctx->bind.fs_images[1] = ctx->atlasTexture[1].id != SG_INVALID_ID ?
+        ctx->atlasTexture[1] : ctx->atlasTexture[0];
+    ctx->bind.fs_images[2] = ctx->atlasTexture[2].id != SG_INVALID_ID ?
+        ctx->atlasTexture[2] : ctx->atlasTexture[0];
+    ctx->bind.fs_images[3] = ctx->atlasTexture[3].id != SG_INVALID_ID ?
+        ctx->atlasTexture[3] : ctx->atlasTexture[0];
+    
     sg_apply_bindings(ctx->bind);
     
     // set up the uniforms
