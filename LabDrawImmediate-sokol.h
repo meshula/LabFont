@@ -10,6 +10,9 @@
 #include "LabDrawImmediate.h"
 #include "sokol_gfx.h"
 
+#include <vector>
+using std::vector;
+
 #define ATLAS_CLEAR_TEXTURE 0
 #define ATLAS_FONSTASH_TEXTURE 1
 #define ATLAS_FIRST_AVAILABLE_TEXTURE 2
@@ -17,6 +20,21 @@
 
 typedef struct FONScontext FONScontext;
 typedef struct LabImmPlatformContext LabImmPlatformContext;
+
+// starting point, a global draw list
+// obv it belongs in the platform context, but this is still prototype
+
+struct DrawItem2D {
+    LabPrim prim;
+    int firstVert, vertCount;
+    int texture_slot;
+    bool sample_nearest;
+    float vx, vy, vw, vh;
+};
+
+
+#define MAX_VERTICES 65536
+
 
 //-----------------------------------------------------------------------------
 // context management
@@ -77,6 +95,8 @@ LabImmAddTexture(LabImmPlatformContext* ctx, sg_image img);
 #include "fontstash.h"
 #include "src/labimm-shd.h"
 
+vector<DrawItem2D> _drawList;
+
 typedef struct {
     float x, y;
     float tx, ty;
@@ -99,7 +119,11 @@ typedef struct LabImmPlatformContext {
     int vertexCapacity;
     int currentVertexBufferOffset;
     int vertexBufferLength;
-    LabImmFONSvertex* vertexData;
+    LabImmFONSvertex* vertexData;   // @TODO there should be a vector of these pointers
+                                    // and every time we hit 65536 we should draw the
+                                    // buffer, create a new buffer, and reset the offset to zero
+                                    // at the beginning of every frame the current buffer to
+                                    // become the zeroeth
 
     // drawing stash
     int nextDrawCmd;
@@ -255,7 +279,7 @@ LabImmPlatformContextCreate(
 
     ctx->vertexCapacity = 4 * 1024 * 1024;
     ctx->vertexBufferLength = ctx->vertexCapacity * sizeof(LabImmFONSvertex);
-    ctx->vertexData = (LabImmFONSvertex*) calloc(1, ctx->vertexBufferLength * 65536);
+    ctx->vertexData = (LabImmFONSvertex*) calloc(1, ctx->vertexBufferLength * MAX_VERTICES);
     
     sg_buffer_desc vbuf_desc;
     memset(&vbuf_desc, 0, sizeof(vbuf_desc));
@@ -311,7 +335,7 @@ int LabImmCreateAtlas(LabImmPlatformContext* ctx, int slot, int width, int heigh
     return ctx->atlasTexture[slot].id != SG_INVALID_ID ? 1 : 0;
 }
 
-void LabImmAtlasUpdate(LabImmPlatformContext* %@,
+void LabImmAtlasUpdate(LabImmPlatformContext* ctx,
     int slot, int srcx, int srcy, int w, int h, const uint8_t* data)
 {
     if (ctx->atlasTexture[slot].id == SG_INVALID_ID) {
@@ -320,6 +344,7 @@ void LabImmAtlasUpdate(LabImmPlatformContext* %@,
 
     ctx->atlasTexture_needs_refresh[slot] = true;
 }
+
 
 void LabImmDrawArrays(LabImmPlatformContext* ctx,
         int texture_slot, bool sample_nearest,
@@ -331,7 +356,31 @@ void LabImmDrawArrays(LabImmPlatformContext* ctx,
         ctx->vertexBufferLength == 0) {
         return;
     }
+
+    LabImmFONSvertex* vertexData = ctx->vertexData + ctx->currentVertexBufferOffset;
+    if (ctx->currentVertexBufferOffset + nverts * sizeof(LabImmFONSvertex) > MAX_VERTICES) {
+        printf("yikes!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    for (int i = 0; i < nverts; ++i) {
+        vertexData[i].x = verts[i*2];
+        vertexData[i].y = verts[i*2 + 1];
+        vertexData[i].tx = tcoords[i*2];
+        vertexData[i].ty = tcoords[i*2 + 1];
+        vertexData[i].rgba = colors[i];
+    }
     
+    _drawList.push_back((DrawItem2D){
+        prim,
+        ctx->currentVertexBufferOffset,
+        nverts,
+        texture_slot,
+        sample_nearest,
+        ctx->viewport.x, ctx->viewport.y, ctx->viewport.z, ctx->viewport.w
+    });
+
+#if 0
     sg_push_debug_group("LabImmDrawArrays");
     
     switch (prim) {
@@ -341,7 +390,8 @@ void LabImmDrawArrays(LabImmPlatformContext* ctx,
             sg_apply_pipeline(ctx->pip_line_strips); break;
         case labprim_triangles:
             sg_apply_pipeline(ctx->pip_triangles); break;
-        case labprim_tristrip:             sg_apply_pipeline(ctx->pip_triangle_strips); break;
+        case labprim_tristrip:
+            sg_apply_pipeline(ctx->pip_triangle_strips); break;
     }
     
     // set up vertex bindings
@@ -397,6 +447,7 @@ void LabImmDrawArrays(LabImmPlatformContext* ctx,
     
     ctx->currentVertexBufferOffset += bufferLength; // todo: align up
     sg_pop_debug_group();
+#endif
 }
 
 void lab_imm_batch_draw(

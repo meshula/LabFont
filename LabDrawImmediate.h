@@ -66,8 +66,8 @@ LAB_EXTERNC void lab_imm_batch_begin(
                     int sz, LabPrim prim, bool interleaved, float* data);
 
 void lab_imm_batch_draw(
-    LabImmContext* _Nonnull,
-                        int texture_slot, bool sample_nearest);
+                    LabImmContext*,
+                    int texture_slot, bool sample_nearest);
 
 LAB_EXTERNC void lab_imm_batch_v2f(LabImmContext*, 
                     int count, float* v2f);
