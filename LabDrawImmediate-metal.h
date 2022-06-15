@@ -83,37 +83,6 @@ lab_imm_MTLRenderCommandEncoder_set(
     LabImmPlatformContext* _Nonnull mtl,
     id<MTLRenderCommandEncoder> _Nullable);
 
-void
-lab_imm_viewport_set(
-    LabImmPlatformContext* _Nonnull mtl,
-    float originX, float originY, float w, float h);
-
-//-----------------------------------------------------------------------------
-// drawing
-
-void LabImmDrawArrays(
-    LabImmPlatformContext* _Nonnull,
-    int texture_slot, bool sample_nearest,
-    LabPrim,
-    const float* _Nonnull verts,
-    const float* _Nonnull tcoords,
-    const unsigned int* _Nonnull colors,
-    int nverts);
-
-//-----------------------------------------------------------------------------
-// font/sprite atlas texture management
-// If an atlas has been previously created, calling this will replace it
-int
-LabImmCreateAtlas(
-    LabImmPlatformContext* _Nonnull,
-    int texture_slot, int width, int height);
-
-// given an in memory copy of the atlas, stored at data, Update will mark the
-// region from srcx, srcy to srcx+w, srcy+h as needing a GPU refresh
-void
-LabImmAtlasUpdate(
-    LabImmPlatformContext* _Nonnull,
-    int texture_slot, int srcx, int srcy, int w, int h, const uint8_t* _Nonnull data);
 #endif
 
 //-----------------------------------------------------------------------------
@@ -214,12 +183,12 @@ LabImmPlatformContextCreate(
                                             options:MTLResourceStorageModeShared];
 
     // small white block in slot 1
-    LabImmCreateAtlas(mtl, ATLAS_CLEAR_TEXTURE, 4, 4);
+    lab_imm_create_atlas(mtl, ATLAS_CLEAR_TEXTURE, 4, 4);
     static uint8_t clear[16] = {
         0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,
         0xff, 0xff, 0xff, 0xff,  0xff, 0xff, 0xff, 0xff,
     };
-    LabImmAtlasUpdate(mtl, ATLAS_CLEAR_TEXTURE, 0, 0, 4, 4, clear);
+    lab_imm_update_atlas(mtl, ATLAS_CLEAR_TEXTURE, 0, 0, 4, 4, clear);
 
     // set up fonstash to render through this immediate mode
     FONSparams params;
@@ -263,7 +232,7 @@ LabImmPlatformContextCreate(
         int nverts) {
         LabImmPlatformContext* mtl = (LabImmPlatformContext*) ptr;
         // fonstash texture atlas in slot 2
-        LabImmDrawArrays(mtl, ATLAS_FONSTASH_TEXTURE, false,
+        lab_imm_draw_arrays(mtl, ATLAS_FONSTASH_TEXTURE, false,
                          labprim_triangles,
                          verts, tcoords, colors, nverts);
     };
@@ -312,7 +281,8 @@ void lab_imm_viewport_set(LabImmPlatformContext* _Nonnull mtl,
 }
 
 
-int LabImmCreateAtlas(LabImmPlatformContext* _Nonnull mtl, int slot, int width, int height)
+int lab_imm_create_atlas(LabImmPlatformContext* _Nonnull mtl,
+                         int slot, int width, int height)
 {
     MTLTextureDescriptor *descriptor = 
         [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
@@ -327,7 +297,7 @@ int LabImmCreateAtlas(LabImmPlatformContext* _Nonnull mtl, int slot, int width, 
     return 1;
 }
 
-void LabImmAtlasUpdate(LabImmPlatformContext* _Nonnull mtl,
+void lab_imm_update_atlas(LabImmPlatformContext* _Nonnull mtl,
     int slot, int srcx, int srcy, int w, int h, const uint8_t* data)
 {
     if (mtl->atlasTexture[slot] == nil) {
@@ -398,7 +368,7 @@ LabImmDraw__renderPipelineState(LabImmPlatformContext* mtl)  {
     return pipelineState;
 }
 
-void LabImmDrawArrays(LabImmPlatformContext* mtl,
+void lab_imm_draw_arrays(LabImmPlatformContext* mtl,
         int texture_slot, bool sample_nearest,
         LabPrim prim,
         const float* verts, const float* tcoords, const unsigned int* colors, 
@@ -471,7 +441,7 @@ void lab_imm_batch_draw(
     }
 
     if (!batch->interleaved) {
-        LabImmDrawArrays(batch->platform,
+        lab_imm_draw_arrays(batch->platform,
             texture_slot, sample_nearest,
             batch->prim, 
             batch->data_pos, batch->data_st, batch->data_rgba, batch->count); 

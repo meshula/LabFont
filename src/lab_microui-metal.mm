@@ -16,7 +16,7 @@ extern "C" void r_begin(LabFontDrawState*,
                         int disp_width, int disp_height);
 extern "C" void r_end(void);
 extern "C" void r_draw(void);
-extern "C" void r_init(LabImmDrawContext* imm_ctx, LabFontState * font);
+extern "C" void r_init(LabImmPlatformContext* imm_ctx, LabFontState * font);
 extern "C" void r_draw_rect(mu_Rect rect, mu_Color color);
 extern "C" void r_draw_text(LabFontDrawState* ds,
                             const char* text, mu_Vec2 pos, mu_Color color);
@@ -33,7 +33,7 @@ static LabFontSize font_size;
 static LabImmPlatformContext* _imm_ctx = nullptr;
 
 extern "C"
-void r_init(LabImmDrawContext* imm_ctx, LabFontState * font_) {
+void r_init(LabImmPlatformContext* imm_ctx, LabFontState * font_) {
     _imm_ctx = imm_ctx;
     _microui_current_font = font_;
     font_size = LabFontMeasure("", font_);
@@ -181,7 +181,7 @@ static int text_height_cb(mu_Font font) {
 }
 
 static mu_Context ctx;
-extern "C" mu_Context* lab_microui_init(LabImmDrawContext* imm_ctx, LabFontState * fs)
+extern "C" mu_Context* lab_microui_init(LabImmPlatformContext* imm_ctx, LabFontState * fs)
 {
     /* setup microui renderer */
     r_init(imm_ctx, fs);

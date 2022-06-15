@@ -66,8 +66,8 @@ LAB_EXTERNC void lab_imm_batch_begin(
                     int sz, LabPrim prim, bool interleaved, float* data);
 
 void lab_imm_batch_draw(
-    LabImmContext* _Nonnull,
-                        int texture_slot, bool sample_nearest);
+                    LabImmContext*,
+                    int texture_slot, bool sample_nearest);
 
 LAB_EXTERNC void lab_imm_batch_v2f(LabImmContext*, 
                     int count, float* v2f);
@@ -89,6 +89,39 @@ LAB_EXTERNC void lab_imm_c4f(LabImmContext*,
 
 LAB_EXTERNC void lab_imm_line(LabImmContext* lc,
                     float x0, float y0, float x1, float y1, float w);
+
+void
+lab_imm_viewport_set(
+    LabImmPlatformContext* _Nonnull mtl,
+    float originX, float originY, float w, float h);
+
+//-----------------------------------------------------------------------------
+// drawing
+
+void lab_imm_draw_arrays(
+    LabImmPlatformContext* _Nonnull,
+    int texture_slot, bool sample_nearest,
+    LabPrim,
+    const float* _Nonnull verts,
+    const float* _Nonnull tcoords,
+    const unsigned int* _Nonnull colors,
+    int nverts);
+
+//-----------------------------------------------------------------------------
+// font/sprite atlas texture management
+// If an atlas has been previously created, calling this will replace it
+int
+lab_imm_create_atlas(
+    LabImmPlatformContext* _Nonnull,
+    int texture_slot, int width, int height);
+
+// given an in memory copy of the atlas, stored at data, Update will mark the
+// region from srcx, srcy to srcx+w, srcy+h as needing a GPU refresh
+void
+lab_imm_update_atlas(
+    LabImmPlatformContext* _Nonnull,
+    int texture_slot, int srcx, int srcy, int w, int h, const uint8_t* _Nonnull data);
+
 
 //-----------------------------------------------------------------------------
 // utility

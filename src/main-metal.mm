@@ -118,8 +118,14 @@ static void zep_window(mu_Context* ctx)
     int fontItalic;
     int fontBold;
     int fontJapanese;
-    LabImmDrawContext* imm_ctx;
+    LabImmPlatformContext* imm_ctx;
     std::atomic<int> _lock;
+}
+
+-(void)dealloc {
+    self.device = nil;
+    self.commandQueue = nil;
+    [super dealloc];
 }
 
 - (instancetype)init {
@@ -134,7 +140,7 @@ static void zep_window(mu_Context* ctx)
         LabFontInitMetal(self->imm_ctx, self.colorPixelFormat);
 
         const char* rsrc_str = lab_application_resource_path(g_app_path.c_str(),
-                                                             "share/lab_font_demo");
+                                          "share/lab_font_demo");
         if (!rsrc_str) {
             printf("resource path not found relative to %s\n", g_app_path.c_str());
             exit(0);
@@ -249,7 +255,7 @@ static void zep_window(mu_Context* ctx)
 /*   \ V / | |  __/\ V  V /  */
 /*    \_/  |_|\___| \_/\_/   */
 
-@interface LabFontDemoView : NSView
+@interface LabFontDemoView : MTKView
 @end
 
 
@@ -291,15 +297,16 @@ static void zep_window(mu_Context* ctx)
 
 - (void)commonMetalViewInit {
     self->_renderer = [LabFontDemoRenderer new];
+    self.device = self->_renderer.device;
     self.layer = [self makeBackingLayer];
     self.layer.magnificationFilter = kCAFilterNearest;
     self.translatesAutoresizingMaskIntoConstraints = false;
 
     [self updateTrackingAreas];
-    //self.preferredFramesPerSecond = 60;
-    //self.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
-    //self.sampleCount = 1;
-    //self.autoResizeDrawable = false;
+    self.preferredFramesPerSecond = 60;
+    self.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+    self.sampleCount = 1;
+    self.autoResizeDrawable = false;
 
     self->_shift_down = false;
     self->_option_down = false;
@@ -330,7 +337,7 @@ static void zep_window(mu_Context* ctx)
         CGSize drawableSize = CGSizeMake(boundsSize.width * scale, boundsSize.height * scale);
         self.metalLayer.drawableSize = drawableSize;
     }
-    [self drawRect:self.bounds];
+    //[self drawRect:self.bounds];
 }
 
 - (void)timer_fired:(id)sender {
@@ -485,7 +492,7 @@ uint8_t translateKey(NSEvent* event) {
     }
     
     char dest[16];
-    int len = tsConvertUtf16ToUtf8(dest, 16, (const char16_t*) buffer);
+    /*int len =*/ tsConvertUtf16ToUtf8(dest, 16, (const char16_t*) buffer);
     return dest[0];
 }
 
@@ -523,7 +530,7 @@ uint8_t translateKey(NSEvent* event) {
         mu_input_keyup(state.mu_ctx, MU_KEY_RETURN);
     }
     else {
-        uint8_t c = translateKey(event);
+        /*uint8_t c =*/ translateKey(event);
     }
     printf("Key Up\n");
 }
@@ -676,53 +683,8 @@ uint8_t translateKey(NSEvent* event) {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #if 0
-/* initialization */
-static void init() 
-{
-    add_quit_menu();
 
-    const char* dir = lab_application_resource_path(g_app_path.c_str(), 
-                "share/lab_font_demo");
-    if (!dir) {
-        printf("Could not find share/lab_font_demo\n");
-        exit(0);
-    }
-    static std::string asset_root(dir);
-    static std::string r18_path = asset_root + "/hauer-12.png";// "/robot-18.png";
-    static LabFont* font_robot18 = LabFontLoad("robot-18", r18_path.c_str(), LabFontType{ LabFontTypeQuadplay });
-
-    int fontPixelHeight = 18;
-    static LabFontState* microui_st = LabFontStateBake(font_robot18,
-        (float)fontPixelHeight, { {255, 255, 255, 255} },
-        LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
-
-    state.mu_ctx = lab_microui_init(&lic_imu, microui_st);
-
-    // Zep
-    fontPixelHeight = 18;
-    //static LabFontState* zep_st = LabFontStateBake(state.font_cousine, (float) fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
-    static LabFontState* zep_st = LabFontStateBake(font_robot18, (float)fontPixelHeight, { {255, 255, 255, 255} }, LabFontAlign{ LabFontAlignLeft | LabFontAlignTop }, 0.f, 0.f);
-    zep = LabZep_create(zep_st, "Shader.frag", shader.c_str());
-}
 
 static void event(const sapp_event* ev) {
 
@@ -813,83 +775,6 @@ static void event(const sapp_event* ev) {
 #endif
 
 
-/* do one frame */
-void frame(void) {
-
-    //-------------------------------------------------------------------------
-    // Pre-sgl render pass
-
-    //-------------------------------------------------------------------------
-    // sgl render pass
-
-    /* text rendering via fontstash.h */
-    float sx, sy, dx, dy, lh = 0.0f;
-    const float dpis = state.dpi_scale;
-    sx = 50*dpis; sy = 50*dpis;
-    dx = sx; dy = sy;
-
-#if 0
-    sgl_defaults();
-    sgl_matrix_mode_projection();
-    sgl_ortho(0.0f, (float) sapp_width(), (float) sapp_height(), 0.0f, -1.0f, +1.0f);
-    sgl_scissor_rect(0, 0, sapp_width(), sapp_height(), true);
-
-    if (false) {
-        sgl_enable_texture();
-        sgl_texture(debug_texture);
-        sgl_begin_quads();
-        float x0 = 100; float x1 = 800;
-        float y0 = 100; float y1 = 600;
-        float u0 = 0; float u1 = 1;
-        float v0 = 0; float v1 = 1;
-        sgl_c4b(255, 255, 255, 255);
-        sgl_v2f_t2f(x0, y0, u0, v0);
-        sgl_v2f_t2f(x1, y0, u1, v0);
-        sgl_v2f_t2f(x1, y1, u1, v1);
-        sgl_v2f_t2f(x0, y1, u0, v1);
-        sgl_end();
-    }
-
-    LabFontDrawState* ds = LabFontDrawBegin((void*) command_encoder);
-    
-    if (true) {
-        fontDemo(ds, dx, dy, sx, sy);
-    }
-
-    //---- sgl UI layer
-    if (true) {
-        /* UI definition */
-        mu_begin(state.mu_ctx);
-        microui_test_window(state.mu_ctx);
-        log_window(state.mu_ctx);
-        zep_window(state.mu_ctx);
-        microui_style_window(state.mu_ctx);
-        mu_end(state.mu_ctx);
-
-        lab_microui_render(sapp_width(), sapp_height(), zep);
-    }
-
-    LabFontDrawEnd(ds);
-
-    // begin sokol GL rendering with a clear pass
-    sg_pass_action pass_action;
-    memset(&pass_action, 0, sizeof(pass_action));
-    pass_action.colors[0].action = SG_ACTION_CLEAR;
-    pass_action.colors[0].value = { state.bg.r / 255.0f, state.bg.g / 255.0f, state.bg.b / 255.0f, 1.0f };
-    sg_begin_default_pass(&pass_action, sapp_width(), sapp_height());
-
-    // draw all the sgl stuff
-    sgl_draw();
-
-    sg_end_pass();
-
-    //-------------------------------------------------------------------------
-    // Post-sgl render pass goes here
-
-    sg_commit();
-#endif
-}
-
 int main(int argc, const char * argv[]) {
     
     g_app_path = lab_application_executable_path(argv[0]);
@@ -905,5 +790,6 @@ int main(int argc, const char * argv[]) {
     [NSApp activateIgnoringOtherApps:YES];
     [NSEvent setMouseCoalescingEnabled:NO];
     [application run];
+    [application setDelegate:nil];
     return EXIT_SUCCESS;
 }

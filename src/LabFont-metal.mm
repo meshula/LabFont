@@ -64,7 +64,7 @@ struct LabFontState
 
 namespace LabFontInternal {
 
-    LabImmDrawContext* _imm_ctx = nullptr;
+    LabImmPlatformContext* _imm_ctx = nullptr;
     id<MTLRenderCommandEncoder> _command_encoder = nil;
     MTLPixelFormat _format;
 
@@ -142,7 +142,7 @@ namespace LabFontInternal {
 }
 
 extern "C"
-void LabFontInitMetal(LabImmDrawContext* imm_ctx, MTLPixelFormat fmt) {
+void LabFontInitMetal(LabImmPlatformContext* imm_ctx, MTLPixelFormat fmt) {
     LabFontInternal::_imm_ctx = imm_ctx;
     LabFontInternal::_format = fmt;
 }
@@ -155,15 +155,8 @@ void LabFontDrawBeginMetal(id<MTLRenderCommandEncoder> enc) {
 extern "C"
 LabFontDrawState* LabFontDrawBegin(float ox, float oy, float w, float h)
 {
-    MTLViewport viewport = {
-        .originX = ox, .originY = oy,
-        .height = h, .width = w
-    };
     FONScontext* fc = LabFontInternal::fontStash();
-    //mtlfonsSetRenderCommandEncoder(fc,
-    //            LabFontInternal::_command_encoder, viewport);
     fonsClearState(fc);
-    
     return nullptr;
 }
 
@@ -302,6 +295,7 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                 }
                 else {
                     auto err = json.GetParseError();
+                    printf("json parse error %d\n", err); // is there a json error to string routine?
                 }
                 free(res.buff);
             }
@@ -507,7 +501,6 @@ static float sokol_8x8_draw(const char* str, const char* end,
     if (end == nullptr)
         end = str + strlen(str);
 
-    FONScontext* fc = LabFontInternal::fontStash();
     uint32_t* rgba_p = (uint32_t*) & c->rgba;
     uint32_t rgba = *rgba_p;
     int count = end - str;
@@ -587,7 +580,7 @@ static float sokol_8x8_draw(const char* str, const char* end,
         kern += fs->font->charspc_x;
     }
 
-     LabImmDrawArrays(LabFontInternal::_imm_ctx, fs->font->texture_slot, true,
+     lab_imm_draw_arrays(LabFontInternal::_imm_ctx, fs->font->texture_slot, true,
                      labprim_triangles,
                      verts.data(), tcoords.data(), colors.data(),
                      count * 6);
@@ -604,7 +597,6 @@ static float quadplay_font_draw(const char* str, const char* end,
     if (end == nullptr)
         end = str + strlen(str);
 
-    FONScontext* fc = LabFontInternal::fontStash();
     uint32_t* rgba_p = (uint32_t*) & c->rgba;
     uint32_t rgba = *rgba_p;
     int count = end - str;
@@ -682,7 +674,7 @@ static float quadplay_font_draw(const char* str, const char* end,
         kern += fs->font->kern[*p] + fs->font->charspc_x;
     }
     
-    LabImmDrawArrays(LabFontInternal::_imm_ctx, fs->font->texture_slot, true,
+    lab_imm_draw_arrays(LabFontInternal::_imm_ctx, fs->font->texture_slot, true,
                      labprim_triangles,
                      verts.data(), tcoords.data(), colors.data(),
                      count * 6);
@@ -774,13 +766,12 @@ LabFontSize LabFontMeasureSubstring(const char* str, const char* end, LabFontSta
         float px = fs->font->img_w / 32.f;
         for (size_t c = 0; c < len; ++c, idx += 1.f) {
             unsigned char ch = *(str + c);
-            int i = qp_font_map[ch];
-            int ix = i & 0x1f;
-
-            float u0 = (float(ix) * px) / fs->font->img_w;
-            float u1 = u0 + px;
-            float x0 = (x + kern) + (idx * px);
-            float x1 = x0 + px;
+            //int i = qp_font_map[ch];
+            //int ix = i & 0x1f;
+            //float u0 = (float(ix) * px) / fs->font->img_w;
+            //float u1 = u0 + px;
+            //float x0 = (x + kern) + (idx * px);
+            //float x1 = x0 + px;
             kern += fs->font->kern[ch] + fs->font->charspc_x;
         }
         sz.width = x + kern + (idx * px);

@@ -183,11 +183,13 @@ namespace
             sgl_v2f_c4f(rc.topLeftPx.x, rc.bottomRightPx.y, color.x, color.y, color.z, color.w);
             sgl_end();
 #else
-            if (_imm_buff.size() < 256)
-                _imm_buff.resize(256);
+            // 256 verts needs 5 floats storage
+            int sz = 256;
+            if (_imm_buff.size() < sz * 5)
+                _imm_buff.resize(sz * 5);
             
             LabImmContext lic;
-            lab_imm_batch_begin(&lic, _platform, 256, labprim_triangles, false, _imm_buff.data());
+            lab_imm_batch_begin(&lic, _platform, sz, labprim_triangles, false, _imm_buff.data());
             lab_imm_c4f(&lic, color.x, color.y, color.z, color.w);
             
             lab_imm_v2f(&lic, rc.topLeftPx.x,     rc.topLeftPx.y);
