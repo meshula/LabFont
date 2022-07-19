@@ -28,12 +28,10 @@ extern "C" {
 #if defined(__APPLE__) && defined(__OBJC__)
 
 struct LabImmPlatformContext;
-
 void LabFontInitMetal(LabImmPlatformContext*, MTLPixelFormat);
 void LabFontDrawBeginMetal(id<MTLRenderCommandEncoder>);
 
 #endif
-
 
 const int LabFontTypeTTF = 0;
 const int LabFontTypeQuadplay = 1;
@@ -97,17 +95,21 @@ float LabFontDraw(LabFontDrawState*,
 
 // returns first pixel following the drawn text, overrides color in font state
 float LabFontDrawColor(LabFontDrawState*, 
-        const char* str, struct LabFontColor* c, float x, float y, struct LabFontState* fs);
+        const char* str, struct LabFontColor* c,
+        float x, float y, struct LabFontState* fs);
 float LabFontDrawSubstringColor(LabFontDrawState*,
-        const char* str, const char* end, struct LabFontColor* c, float x, float y, struct LabFontState* fs);
+        const char* str, const char* end, struct LabFontColor* c,
+        float x, float y, struct LabFontState* fs);
 
-// measure a string. Measuring an empty string will fill in font metrics to ascender, descender, and h.
+// measure a string. Measuring an empty string will fill in font metrics
+// to ascender, descender, and h.
 struct LabFontSize LabFontMeasure(const char* str, struct LabFontState* fs);
-struct LabFontSize LabFontMeasureSubstring(const char* str, const char* end, struct LabFontState* fs);
+struct LabFontSize LabFontMeasureSubstring(
+            const char* str, const char* end, struct LabFontState* fs);
 
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif
+#endif //LABFONT_H

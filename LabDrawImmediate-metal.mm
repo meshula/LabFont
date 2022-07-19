@@ -26,22 +26,22 @@
 // 3. This notice may not be removed or altered from any source distribution.
 //-----------------------------------------------------------------------------
 
-#ifndef LABDRAWIMM_METAL_H
-#define LABDRAWIMM_METAL_H
 
 #import "LabDrawImmediate.h"
 
-#import <Metal/Metal.h>
 
-inline
-unsigned int packRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
-{
-    return (r) | (g << 8) | (b << 16) | (a << 24);
-}
+
+//-----------------------------------------------------------------------------
+
+
+#include "fontstash.h"
+#import <simd/simd.h>
+
 
 #define ATLAS_CLEAR_TEXTURE 0
 #define ATLAS_FONSTASH_TEXTURE 1
 #define ATLAS_SLOT_MAX 16
+
 
 struct FONSContext;
 typedef struct FONScontext FONScontext;
@@ -59,40 +59,48 @@ typedef struct LabImmPlatformContext {
     int next_texture_slot;
 } LabImmPlatformContext;
 
-
-//-----------------------------------------------------------------------------
-// context management
-LabImmPlatformContext* _Nullable
-LabImmPlatformContextCreate(
-    id<MTLDevice> _Nonnull,
-    int font_atlas_width, int font_atlas_height);
-
-void 
-LabImmPlatformContextDestroy(
-    LabImmPlatformContext* _Nonnull);
-
-// the default format is BGRA8Unorm, setting it here will also cause the
-// render pipeline to be regenerated.
-void
-LabImmDrawSetRenderTargetPixelFormat(
-    LabImmPlatformContext* _Nonnull mtl,
-    MTLPixelFormat pixelFormat);
-
-void
-lab_imm_MTLRenderCommandEncoder_set(
-    LabImmPlatformContext* _Nonnull mtl,
-    id<MTLRenderCommandEncoder> _Nullable);
-
-#endif
-
-//-----------------------------------------------------------------------------
-
-#ifdef LABIMMDRAW_METAL_IMPLEMENTATION
-
-#include "fontstash.h"
-#import <simd/simd.h>
-
 NS_ASSUME_NONNULL_BEGIN
+
+extern "C"
+LabImmViewport lab_imm_Viewport(LabImmPlatformContext* _Nonnull mtl) {
+    return (LabImmViewport) {
+        static_cast<float>(mtl->viewport.originX),
+        static_cast<float>(mtl->viewport.originY),
+        static_cast<float>(mtl->viewport.width),
+        static_cast<float>(mtl->viewport. height) };
+}
+
+extern "C"
+void lab_imm_SetClipRect(LabImmPlatformContext* _Nonnull mtl, LabImmViewport* vp)
+{
+    MTLScissorRect r = {
+        static_cast<NSUInteger>(vp->x),
+        static_cast<NSUInteger>(vp->y),
+        static_cast<NSUInteger>(vp->w),
+        static_cast<NSUInteger>(vp->h) };
+    [mtl->currentRenderCommandEncoder setScissorRect:r];
+}
+
+extern "C"
+FONScontext* lab_imm_FONScontext(LabImmPlatformContext* _Nonnull mtl)
+{
+    return mtl->fonsContext;
+}
+
+extern "C"
+id<MTLDevice> lab_imm_device(LabImmPlatformContext* _Nonnull mtl)
+{
+    return mtl->device;
+}
+
+extern "C"
+int lab_imm_assign_texture_slot(LabImmPlatformContext* _Nonnull mtl, id<MTLTexture> texture)
+{
+    int ret = mtl->next_texture_slot;
+    mtl->atlasTexture[ret] = texture;
+    ++mtl->next_texture_slot;
+    return ret;
+}
 
 // The length of the circular vertex attribute buffer shared by
 // glyphs rendered from this stash. 1MB equals about 3,000 glyphs.
@@ -451,6 +459,4 @@ void lab_imm_batch_draw(
 
 
 NS_ASSUME_NONNULL_END
-
-#endif
 

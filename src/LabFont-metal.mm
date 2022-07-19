@@ -6,12 +6,13 @@
 #include <stddef.h>
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash.h"
+#undef FONTSTASH_IMPLEMENTATION
 
 //#define MTLFONTSTASH_IMPLEMENTATION
 //#include "mtlfontstash.h"
 
+#define LABIMMDRAW_IMPL
 #include "../LabDrawImmediate.h"
-#include "../LabDrawImmediate-metal.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -39,7 +40,7 @@ namespace lf_internal {
 
 typedef struct LabFont
 {
-    id<MTLTexture> texture;
+    //id<MTLTexture> texture;
     int texture_slot;
     
     int id;           // >= zero for a TTF
@@ -98,7 +99,7 @@ namespace LabFontInternal {
 
     FONScontext* fontStash()
     {
-        return _imm_ctx->fonsContext;
+        return lab_imm_FONScontext(_imm_ctx);
     }
 
     constexpr uint32_t fons_rgba(const LabFontColor& c)
@@ -219,6 +220,8 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
         LabFont* r = (LabFont*)calloc(1, sizeof(LabFont));
         if (!r)
             return nullptr;
+        
+        r->texture_slot = -1;
 
         // pass ownership of res.buff to fons
         r->id = fonsAddFontMem(LabFontInternal::fontStash(), name,
@@ -320,21 +323,19 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                                              mipmapped:NO];
             descriptor.storageMode = MTLStorageModeShared;
 
-            r->texture = [LabFontInternal::_imm_ctx->device
+            id<MTLTexture> texture = [lab_imm_device(LabFontInternal::_imm_ctx)
                                 newTextureWithDescriptor:descriptor];
             
-            if (r->texture == nil) {
+            if (texture == nil) {
                 printf("Could not create a Metal texture of size %d x %d\n", x, y);
                 stbi_image_free(data);
                 free(r);
                 return nullptr;
             }
 
-            r->texture_slot = LabFontInternal::_imm_ctx->next_texture_slot;
-            LabFontInternal::_imm_ctx->atlasTexture[r->texture_slot] = r->texture;
-            ++LabFontInternal::_imm_ctx->next_texture_slot;
+            r->texture_slot = lab_imm_assign_texture_slot(LabFontInternal::_imm_ctx, texture);
 
-            [r->texture replaceRegion:MTLRegionMake2D(0, 0, x, y)
+            [texture replaceRegion:MTLRegionMake2D(0, 0, x, y)
                           mipmapLevel:0
                             withBytes:data
                           bytesPerRow:x * 4];
@@ -425,7 +426,7 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                                              mipmapped:NO];
 
            descriptor.storageMode = MTLStorageModeShared;
-           mtl_texture = [LabFontInternal::_imm_ctx->device
+           mtl_texture = [lab_imm_device(LabFontInternal::_imm_ctx)
                                 newTextureWithDescriptor:descriptor];
             
             if (mtl_texture == nil) {
@@ -434,10 +435,7 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
                 return nullptr;
             }
 
-            mtl_texture_slot = LabFontInternal::_imm_ctx->next_texture_slot;
-            LabFontInternal::_imm_ctx->atlasTexture[mtl_texture_slot] = mtl_texture;
-            ++LabFontInternal::_imm_ctx->next_texture_slot;
-
+            mtl_texture_slot = lab_imm_assign_texture_slot(LabFontInternal::_imm_ctx, mtl_texture);
             [mtl_texture replaceRegion:MTLRegionMake2D(0, 0, 256 * 8, 8 * 8)
                            mipmapLevel:0
                              withBytes:texture
@@ -446,7 +444,6 @@ LabFont* LabFontLoad(const char* name, const char* path, LabFontType type)
             unpack = false;
         }
 
-        r->texture = mtl_texture;
         r->texture_slot = mtl_texture_slot;
         r->id = -2;
         r->img_w = 256 * 8;
@@ -495,7 +492,7 @@ static bool qp_must_init = true;
 static float sokol_8x8_draw(const char* str, const char* end, 
         LabFontColor* c, float x, float y, LabFontState* fs)
 {
-    if (str == nullptr || fs == nullptr || fs->font->texture == nil)
+    if (str == nullptr || fs == nullptr || fs->font->texture_slot < 0)
         return x;
 
     if (end == nullptr)
@@ -591,7 +588,7 @@ static float sokol_8x8_draw(const char* str, const char* end,
 static float quadplay_font_draw(const char* str, const char* end, 
         LabFontColor* c, float x, float y, LabFontState* fs)
 {
-    if (str == nullptr || fs == nullptr || fs->font->texture == nil)
+    if (str == nullptr || fs == nullptr || fs->font->texture_slot < 0)
         return x;
 
     if (end == nullptr)
@@ -693,7 +690,7 @@ float LabFontDraw(LabFontDrawState* ds, const char* str, float x, float y, LabFo
         return fonsDrawText(fc, x, y, str, NULL);
     }
     
-    else if (fs->font->texture != nil) {
+    else if (fs->font->texture_slot >= 0) {
         if (fs->font->id == -1) {
             return quadplay_font_draw(str, nullptr, &fs->color, x, y, fs);
         }
@@ -723,7 +720,7 @@ float LabFontDrawSubstringColor(LabFontDrawState* ds,
         fonsSetColor(fc, LabFontInternal::fons_rgba(*c));
         return fonsDrawText(fc, x, y, str, end);
     }
-    else if (fs->font->texture != nil) {
+    else if (fs->font->texture_slot >= 0) {
         if (fs->font->id == -1) {
             return quadplay_font_draw(str, end, c, x, y, fs);
         }

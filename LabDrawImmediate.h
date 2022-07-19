@@ -14,6 +14,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __OBJC__
+#import <Metal/Metal.h>
+#endif
+
 #ifdef __clang__
 _Pragma("clang assume_nonnull begin")
 #endif
@@ -41,7 +45,64 @@ typedef struct { float x, y, z, w; } labimm_v4f;
 struct LabImmPlatformContext;
 typedef struct LabImmPlatformContext LabImmPlatformContext;
 
-typedef struct LabImmContext {
+#ifdef __OBJC__
+//-----------------------------------------------------------------------------
+// context management
+LAB_EXTERNC
+LabImmPlatformContext* _Nullable
+LabImmPlatformContextCreate(
+    id<MTLDevice> _Nonnull,
+    int font_atlas_width, int font_atlas_height);
+
+LAB_EXTERNC
+void
+LabImmPlatformContextDestroy(
+    LabImmPlatformContext* _Nonnull);
+
+// the default format is BGRA8Unorm, setting it here will also cause the
+// render pipeline to be regenerated.
+LAB_EXTERNC
+void
+LabImmDrawSetRenderTargetPixelFormat(
+    LabImmPlatformContext* _Nonnull mtl,
+    MTLPixelFormat pixelFormat);
+
+LAB_EXTERNC
+void
+lab_imm_MTLRenderCommandEncoder_set(
+    LabImmPlatformContext* _Nonnull mtl,
+    id<MTLRenderCommandEncoder> _Nullable);
+
+typedef struct {
+    float x, y, w, h;
+} LabImmViewport;
+
+LAB_EXTERNC
+LabImmViewport lab_imm_Viewport(LabImmPlatformContext* _Nonnull mtl);
+LAB_EXTERNC
+void lab_imm_SetClipRect(LabImmPlatformContext* _Nonnull mtl, LabImmViewport* vp);
+
+LAB_EXTERNC
+id<MTLDevice> lab_imm_device(LabImmPlatformContext* _Nonnull mtl);
+
+LAB_EXTERNC
+int lab_imm_assign_texture_slot(LabImmPlatformContext* _Nonnull mtl, id<MTLTexture>);
+
+//-----------------------------------------------------------------------------
+#endif
+
+typedef struct FONScontext FONScontext;
+LAB_EXTERNC
+FONScontext* lab_imm_FONScontext(LabImmPlatformContext* _Nonnull mtl);
+
+/*
+    LabImmContext
+ 
+    holds vertex and primitive data for rendering
+    holds a pointer to an un-owned associated platform context
+ */
+
+typedef struct {
     float* data_pos;
     float* data_st;
     uint32_t* data_rgba;
@@ -60,6 +121,12 @@ typedef struct LabImmContext {
 
 LAB_EXTERNC size_t lab_imm_size_bytes(int vert_count);
 
+/*
+    lab_imm_batch_begin
+ 
+    Set up an immediate batch on the specified context
+    The data block is un-owned.
+ */
 LAB_EXTERNC void lab_imm_batch_begin(
                     LabImmContext*,
                     LabImmPlatformContext*,
@@ -128,6 +195,12 @@ lab_imm_update_atlas(
 // [32 ABGR 0]
 
 inline uint32_t lab_imm_pack_RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    return (r) | (g << 8) | (b << 16) | (a << 24);
+}
+
+inline
+unsigned int packRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
+{
     return (r) | (g << 8) | (b << 16) | (a << 24);
 }
 

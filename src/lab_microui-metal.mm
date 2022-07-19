@@ -1,7 +1,6 @@
 
 #include "../LabMicroUI.h"
 #include "../LabDrawImmediate.h"
-#include "../LabDrawImmediate-metal.h"
 
 #include "microui.h"
 #include "../LabZep.h"
@@ -155,15 +154,16 @@ int r_get_text_height(void) {
 
 extern "C"
 void r_set_clip_rect(mu_Rect rect) {
-    if (rect.x > _imm_ctx->viewport.width || rect.y > _imm_ctx->viewport.height)
+    LabImmViewport vp = lab_imm_Viewport(_imm_ctx);
+    if (rect.x > vp.w || rect.y > vp.h)
         return;
     
-    double max_width = _imm_ctx->viewport.width - rect.x;
-    NSUInteger w = (NSUInteger) (max_width < rect.w ? max_width : rect.w);
-    double max_height = _imm_ctx->viewport.height - rect.y;
-    NSUInteger h = (NSUInteger) (max_height < rect.h ? max_height : rect.h);
-    MTLScissorRect r = { (NSUInteger)rect.x, (NSUInteger)rect.y, w, h };
-    [_imm_ctx->currentRenderCommandEncoder setScissorRect:r];
+    float max_width = vp.w - rect.x;
+    float w = max_width < rect.w ? max_width : rect.w;
+    float max_height = vp.h - rect.y;
+    float h = max_height < rect.h ? max_height : rect.h;
+    LabImmViewport clip = { float(rect.x), float(rect.y), w, h };
+    lab_imm_SetClipRect(_imm_ctx, &clip);
 }
 
 

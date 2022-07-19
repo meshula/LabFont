@@ -11,10 +11,8 @@
 #include "fontstash.h"
 //#include "mtlfontstash.h"
 
-#define LABIMMDRAW_IMPL
 #include "../LabDrawImmediate.h"
-#define LABIMMDRAW_METAL_IMPLEMENTATION
-#include "../LabDrawImmediate-metal.h"
+//#include "../LabDrawImmediate-metal.h"
 
 #import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
