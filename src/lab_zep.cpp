@@ -405,8 +405,6 @@ namespace
             ZepReplEvaluateInnerCommand::Register(*spEditor, this);
             ZepReplEvaluateCommand::Register(*spEditor, this);
 
-            spEditor->SetGlobalMode(ZepMode_Vim::StaticName());
-            spEditor->GetConfig().autoHideCommandRegion = false;
             Zep::RegisterSyntaxProviders(*spEditor);
 
             ZepBuffer* newBuffer = nullptr;
@@ -421,6 +419,11 @@ namespace
                 else
                     newBuffer = spEditor->InitWithText("README.md", "Hello World\nThis a test\nA third line of text that is very long and I wonder if it will wrap and oh hey look at this it is pretty long, but is it long enough? Not sure\n");
             }
+
+            spEditor->EnsureWindow(*newBuffer);
+
+            spEditor->SetGlobalMode(ZepMode_Vim::StaticName());
+            spEditor->GetConfig().autoHideCommandRegion = false;
 
             // File watcher not used on apple yet ; needs investigating as to why it doesn't compile/run
             // The watcher is being used currently to update the config path, but clients may want to do more interesting things
