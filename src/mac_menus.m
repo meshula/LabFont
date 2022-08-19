@@ -8,7 +8,7 @@
 #define OBJC_RELEASE(obj) { [obj release]; obj = nil; }
 #endif
 
-void add_quit_menu()
+void add_quit_menu(void)
 {
     NSMenu* menu_bar = [[NSMenu alloc] init];
     NSMenuItem* app_menu_item = [[NSMenuItem alloc] init];

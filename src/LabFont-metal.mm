@@ -598,7 +598,7 @@ static float quadplay_font_draw(const char* str, const char* end,
     uint32_t rgba = *rgba_p;
     int count = end - str;
     if (!count)
-        return;
+        return x;
     
     static std::vector<float> verts;
     static std::vector<float> tcoords;

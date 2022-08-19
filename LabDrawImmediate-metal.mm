@@ -46,8 +46,15 @@
 struct FONSContext;
 typedef struct FONScontext FONScontext;
 
-typedef struct LabImmPlatformContext {
+typedef struct MetalBaseContext {
     _Nullable id<MTLDevice> device;
+    _Nullable id<MTLCommandQueue> commandQueue;
+    _Nullable id<MTLLibrary> library;
+} MetalBaseContext;
+
+typedef struct LabImmPlatformContext {
+    MetalBaseContext* _Nullable baseContext;
+    
     _Nullable id<MTLRenderPipelineState> renderPipelineState;
     _Nullable id<MTLBuffer> vertexBuffer;
     _Nullable id<MTLTexture> atlasTexture[ATLAS_SLOT_MAX];
@@ -90,7 +97,7 @@ FONScontext* lab_imm_FONScontext(LabImmPlatformContext* _Nonnull mtl)
 extern "C"
 id<MTLDevice> lab_imm_device(LabImmPlatformContext* _Nonnull mtl)
 {
-    return mtl->device;
+    return mtl->baseContext->device;
 }
 
 extern "C"
@@ -177,15 +184,25 @@ float4x4_ortho_projection(float left, float top, float right, float bottom, floa
 LabImmPlatformContext* _Nullable
 LabImmPlatformContextCreate(
     id<MTLDevice> _Nonnull device,
+    id<MTLCommandQueue> _Nonnull commandQueue,
+    id<MTLLibrary> _Nonnull library,
     int font_atlas_width, int font_atlas_height)
 {
+    MetalBaseContext* ctx = (MetalBaseContext*)calloc(1, sizeof(MetalBaseContext));
+    if (ctx == NULL) {
+        return NULL;
+    }
     LabImmPlatformContext *mtl = (LabImmPlatformContext*)calloc(1, sizeof(LabImmPlatformContext));
     if (mtl == NULL) {
         return NULL;
     }
+    ctx->device = device;
+    ctx->commandQueue = commandQueue;
+    ctx->library = library;
+    
+    mtl->baseContext = ctx;
     // make a humorously small viewport default
     mtl->viewport = { 0, 0, 640, 480 };
-    mtl->device = device;
     mtl->pixelFormat = MTLPixelFormatBGRA8Unorm;
     mtl->vertexBuffer = [device newBufferWithLength:MTLFONS_BUFFER_LENGTH 
                                             options:MTLResourceStorageModeShared];
@@ -214,7 +231,7 @@ LabImmPlatformContextCreate(
                                                height:height
                                             mipmapped:NO];
         descriptor.storageMode = MTLStorageModeShared;
-        mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE] = [mtl->device newTextureWithDescriptor:descriptor];
+        mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE] = [mtl->baseContext->device newTextureWithDescriptor:descriptor];
         return mtl->atlasTexture[ATLAS_FONSTASH_TEXTURE] == nil ? 0 : 1;
     };
     params.renderResize = params.renderCreate;
@@ -255,7 +272,16 @@ LabImmPlatformContextCreate(
 }
 
 void LabImmPlatformContextDestroy(LabImmPlatformContext* _Nonnull mtl) {
-    mtl->device = nil;
+    if (!mtl)
+        return;
+    
+    auto ctx = mtl->baseContext;
+    mtl->baseContext = nil;
+    ctx->device = nil;
+    ctx->commandQueue = nil;
+    ctx->library = nil;
+    free(ctx);
+
     mtl->renderPipelineState = nil;
     mtl->vertexBuffer = nil;
     for (int i = 0; i < ATLAS_SLOT_MAX; ++i)
@@ -298,7 +324,7 @@ int lab_imm_create_atlas(LabImmPlatformContext* _Nonnull mtl,
                                                           height:height
                                                        mipmapped:NO];
     descriptor.storageMode = MTLStorageModeShared;
-    mtl->atlasTexture[slot] = [mtl->device newTextureWithDescriptor:descriptor];
+    mtl->atlasTexture[slot] = [mtl->baseContext->device newTextureWithDescriptor:descriptor];
     if (mtl->atlasTexture[slot] == nil) {
         return 0;
     }
@@ -330,7 +356,7 @@ LabImmDraw__renderPipelineState(LabImmPlatformContext* mtl)  {
     }
 
     NSError *error = nil;
-    id<MTLLibrary> library = [mtl->device newLibraryWithSource:shaderSource options:nil error:&error];
+    id<MTLLibrary> library = [mtl->baseContext->device newLibraryWithSource:shaderSource options:nil error:&error];
     if (library == nil) {
         NSLog(@"Could not create Metal library from source: %@", error);
         return nil;
@@ -366,7 +392,7 @@ LabImmDraw__renderPipelineState(LabImmPlatformContext* mtl)  {
     descriptor.fragmentFunction = fragmentFunction;
 
     error = nil;
-    id<MTLRenderPipelineState> pipelineState = [mtl->device newRenderPipelineStateWithDescriptor:descriptor error:&error];
+    id<MTLRenderPipelineState> pipelineState = [mtl->baseContext->device newRenderPipelineStateWithDescriptor:descriptor error:&error];
     if (pipelineState == nil) {
         NSLog(@"Error when compiling mtlfontstash render pipeline state: %@", error);
     }

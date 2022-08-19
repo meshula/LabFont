@@ -92,7 +92,7 @@ static void remove_sep(char* buf)
 {
     if (!buf)
         return;
-    int sz = strlen(buf);
+    int sz = (int) strlen(buf);
     if (sz > 0 && (buf[sz - 1] == '/' || buf[sz - 1] == '\\'))
         buf[sz - 1] = '\0';
 }
@@ -100,7 +100,7 @@ static void remove_sep(char* buf)
 static void add_filename(char* buf, const char* fn) {
     if (!buf || !fn)
         return;
-    int sz = strlen(buf);
+    int sz = (int) strlen(buf);
     if (sz > 0 && (buf[sz - 1] != '/' && buf[sz - 1] != '\\')) {
         buf[sz] = '/';
         buf[sz+1] = '\0';
@@ -111,7 +111,7 @@ static void add_filename(char* buf, const char* fn) {
 static void normalize_path(char* buf) {
     if (!buf)
         return;
-    int sz = strlen(buf);
+    int sz = (int) strlen(buf);
     for (int i = 0; i < sz; ++i)
         if (buf[i] == '\\')
             buf[i] = '/';
@@ -133,9 +133,9 @@ const char* lab_application_resource_path(const char * argv0, const char* rsrc)
         int sz = 0;
         do {
             remove_sep(check);
-            sz = strlen(check);
+            sz = (int) strlen(check);
             remove_filename(check);
-            int new_sz = strlen(check);
+            int new_sz = (int) strlen(check);
             if (new_sz == sz)
                 return nullptr;
             sz = new_sz;

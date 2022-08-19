@@ -42,9 +42,9 @@ endif()
 
 if (LABFONT_METAL)
     set(LABFONT_PLATFORM_SRC
-        LabDrawImmediate-metal.h
         src/main-metal.mm
         src/LabFont-metal.mm
+        LabDrawImmediate-metal.mm
         src/lab_microui-metal.mm)
     set(ST_GFX_DEFS LABFONT_HAVE_METAL)
 endif()

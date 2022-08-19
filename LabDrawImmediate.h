@@ -52,6 +52,8 @@ LAB_EXTERNC
 LabImmPlatformContext* _Nullable
 LabImmPlatformContextCreate(
     id<MTLDevice> _Nonnull,
+    id<MTLCommandQueue> _Nonnull,
+    id<MTLLibrary> _Nonnull,
     int font_atlas_width, int font_atlas_height);
 
 LAB_EXTERNC

@@ -105,8 +105,8 @@ static void zep_window(mu_Context* ctx)
 }
 
 @interface LabFontDemoRenderer : NSObject
-@property (nonatomic, strong) id<MTLDevice> device;
-@property (nonatomic, strong) id<MTLCommandQueue> commandQueue;
+@property (nonatomic, readonly, strong) id<MTLDevice> device;
+@property (nonatomic, readonly, strong) id<MTLCommandQueue> commandQueue;
 @property (nonatomic, assign) MTLPixelFormat colorPixelFormat;
 @end
 
@@ -118,30 +118,50 @@ static void zep_window(mu_Context* ctx)
     int fontJapanese;
     LabImmPlatformContext* imm_ctx;
     std::atomic<int> _lock;
+    id<MTLDevice> _device;
+    id<MTLCommandQueue> _commandQueue;
+}
+
+-(id<MTLDevice>) device {
+    return self->_device;
+}
+
+-(id<MTLCommandQueue>) commandQueue {
+    return self->_commandQueue;
 }
 
 -(void)dealloc {
-    self.device = nil;
-    self.commandQueue = nil;
+    LabImmPlatformContextDestroy(self->imm_ctx);
+    self->imm_ctx = nullptr;
+    self->_commandQueue = nil;
+    self->_device = nil;
     [super dealloc];
 }
 
 - (instancetype)init {
     if (self = [super init]) {
         self->_lock = 0;
-        self.device = MTLCreateSystemDefaultDevice();
-        self.commandQueue = [self.device newCommandQueue];
+        self->_device = MTLCreateSystemDefaultDevice();
+        self->_commandQueue = [self.device newCommandQueue];
         self.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
 
         // font atlas size 1024x1024
-        self->imm_ctx = LabImmPlatformContextCreate(self.device, 1024, 1024);
+        self->imm_ctx = LabImmPlatformContextCreate(self.device,
+                                                    self.commandQueue,
+                                                    [self.device newDefaultLibrary],
+                                                    1024, 1024);
         LabFontInitMetal(self->imm_ctx, self.colorPixelFormat);
 
         const char* rsrc_str = lab_application_resource_path(g_app_path.c_str(),
                                           "share/lab_font_demo");
         if (!rsrc_str) {
-            printf("resource path not found relative to %s\n", g_app_path.c_str());
-            exit(0);
+            std::string path = "../" + g_app_path;            
+            rsrc_str = lab_application_resource_path(path.c_str(),
+                                          "share/lab_font_demo");
+            if (!rsrc_str) {
+                printf("resource path not found at %s/share or ../%s/share\n", g_app_path.c_str(), g_app_path.c_str());
+                exit(0);
+            }
         }
         std::string rsrc(rsrc_str);
 
@@ -477,7 +497,7 @@ uint8_t translateKey(NSEvent* event) {
         (const UCKeyboardLayout*) [uchr bytes],
         event.keyCode,
         kUCKeyActionDisplay,
-        event.modifierFlags, // modifier flags
+        (uint32_t) event.modifierFlags, // modifier flags
         LMGetKbdType(),
         kUCKeyTranslateNoDeadKeysBit,
         &deadKeys,
